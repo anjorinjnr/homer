@@ -1,0 +1,37 @@
+# Homer user registry
+#
+# Copy to context/users.yaml and fill in your household details.
+# setup.sh does this automatically on first run.
+#
+# Roles:
+#   admin  — the account owner. Escalations, confirmations, and
+#            irreversible-action approvals route to this person.
+#            There must be exactly one admin.
+#   member — other household members who interact with Homer.
+#
+# Channels:
+#   telegram — your Telegram numeric user ID.
+#              Find it: message @userinfobot on Telegram, it replies with your ID.
+#   whatsapp — your phone number in E.164 format (digits only, no + or spaces).
+#              Example: "14155551234" for +1 (415) 555-1234.
+#   email    — the address you send from. Listing all of a human's channels
+#              here lets analytics collapse WhatsApp + email + telegram to
+#              one person instead of counting as three members.
+#
+# Only fill in channels you actually use. Leave others as "".
+
+users:
+  - name: ""           # first name, used in Homer's prompts
+    role: admin
+    channels:
+      telegram: ""
+      whatsapp: ""
+      email: ""
+
+  # Add more household members:
+  # - name: ""
+  #   role: member
+  #   channels:
+  #     telegram: ""
+  #     whatsapp: ""
+  #     email: ""

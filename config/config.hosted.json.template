@@ -1,0 +1,126 @@
+{
+  "providers": {
+    "anthropic": {
+      "apiKey": "${ANTHROPIC_API_KEY}"
+    },
+    "gemini": {
+      "apiKey": "${GEMINI_API_KEY}"
+    },
+    "groq": {
+      "apiKey": "${GROQ_API_KEY}"
+    },
+    "openrouter": {
+      "apiKey": "${OPENROUTER_API_KEY}"
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": "${HOMER_DEFAULT_MODEL}",
+      "provider": "${HOMER_DEFAULT_PROVIDER}",
+      "workspace": "${HOMER_WORKSPACE}",
+      "guestWorkspace": "${HOMER_GUEST_WORKSPACE}",
+      "contextWindowTokens": 200000,
+      "idleCompactAfterMinutes": 30,
+      "timezone": "${HOMER_TIMEZONE}"
+    }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": ${CHANNEL_TELEGRAM_ENABLED},
+      "token": "${TELEGRAM_BOT_TOKEN}",
+      "allowFrom": ${TELEGRAM_ALLOW_FROM}
+    },
+    "whatsapp": {
+      "enabled": ${CHANNEL_WHATSAPP_ENABLED},
+      "allow_from": ${WHATSAPP_ALLOW_FROM},
+      "identity_resolution": true,
+      "sender_map_path": "${HOMER_WORKSPACE}/sender_map.json"
+    },
+    "email": {
+      "enabled": ${CHANNEL_EMAIL_ENABLED},
+      "consentGranted": true,
+      "authMethod": "oauth2",
+      "oauth2CredentialsFile": "${HOMER_SECRETS}/tokens/homer.pickle",
+      "imapHost": "imap.gmail.com",
+      "imapPort": 993,
+      "imapUsername": "${HOMER_EMAIL_ADDRESS}",
+      "smtpHost": "smtp.gmail.com",
+      "smtpPort": 587,
+      "smtpUsername": "${HOMER_EMAIL_ADDRESS}",
+      "fromAddress": "${HOMER_EMAIL_ADDRESS}",
+      "useIdle": true,
+      "allowFrom": ["*"],
+      "knownSendersFile": "${HOMER_WORKSPACE}/state/known_email_senders.json",
+      "unknownSenderLog": "${HOMER_WORKSPACE}/state/unknown_email_senders.jsonl",
+      "verifyDkim": true,
+      "verifySpf": true
+    },
+    "spamGuard": {
+      "enabled": true,
+      "windowS": 300,
+      "maxRepeats": 2
+    },
+    "scope_outbound_lookup": "${SCOPE_OUTBOUND_LOOKUP}"
+  },
+  "gateway": {
+    "host": "0.0.0.0",
+    "port": ${PORT},
+    "heartbeat": {
+      "lastRunTracking": true,
+      "intervalS": 60,
+      "preCheckRegistry": {
+        "escalations": "${HOMER_VENV} ${HOMER_TOOLS}/scope_store.py --pending-escalations"
+      }
+    }
+  },
+  "tools": {
+    "restrictToWorkspace": true,
+    "exec": {
+      "allowPatterns": [
+        "^${HOMER_VENV} ${HOMER_TOOLS}/\\w+\\.py(\\s[\\s\\S]*)?$"
+      ],
+      "allowedEnvKeys": [
+        "ANTHROPIC_API_KEY",
+        "GEMINI_API_KEY",
+        "OPENROUTER_API_KEY",
+        "GOOGLE_MAPS_API_KEY",
+        "TAVILY_API_KEY",
+        "SKYVERN_API_KEY",
+        "SKYVERN_WEBHOOK_URL",
+        "HOMER_HOME",
+        "HOMER_HOUSEHOLD_ID",
+        "HOMER_WORKSPACE",
+        "HOMER_GUEST_WORKSPACE",
+        "HOMER_DEFAULT_MODEL",
+        "HOMER_TIMEZONE",
+        "HOMER_BACKUP_FOLDER_ID",
+        "HOMER_EXPORT_FOLDER_ID",
+        "HOMER_CONTEXT_DOC_ID",
+        "HOMER_EVENTS_DIR",
+        "HOMER_SCOPE_DB",
+        "HOMER_MAINTENANCE_DB",
+        "HOMER_MEALS_DB",
+        "HOMER_HEALTH_DB",
+        "HOMER_EVENTS_DB",
+        "HOMER_VAULT_DB",
+        "HOMER_SIM",
+        "PLAID_CLIENT_ID",
+        "PLAID_SECRET",
+        "PLAID_ENV",
+        "PLAID_ACCESS_TOKEN_ALLY",
+        "PLAID_SPENDING_SHEET_ID",
+        "HOMER_EMAIL_ADDRESS",
+        "HOMER_EMAIL_DISPLAY_NAME",
+        "HOMER_INTERNAL_EMAILS",
+        "HOMER_EMAIL_APPROVALS_DB",
+        "PORTAL_BASE_URL",
+        "SUPABASE_URL",
+        "SUPABASE_SERVICE_KEY"
+      ]
+    },
+    "audit": {
+      "enabled": true
+    },
+    "mcpServers": {}
+  }
+}

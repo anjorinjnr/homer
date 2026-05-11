@@ -1,0 +1,63 @@
+name: "Interaction Scope — Guest Agent Handling"
+event_id: "sim_interaction_guest"
+event_name: "Interaction Scope Guest Test"
+model: "gemini/gemini-3-pro-preview"
+
+setup:
+  # Create an interaction scope for Bob the painter (WhatsApp)
+  - tool: manage_interaction
+    args: ["--create", "--name", "Bob", "--phone", "+14125550006", "--purpose", "Quote for exterior painting — discussed siding repair and full repaint of front and back. Bob said he'd send a written estimate by end of week."]
+
+beats:
+  # --- Beat 1: Vendor sends initial message (guest agent responds) ---
+
+  - actor: bob_painter
+    message: >
+      Hey, this is Bob from Star Painters. Just wanted to follow up —
+      I can get you that estimate by Thursday. Do you want me to include
+      the siding repair in the same quote or break it out separately?
+    expect:
+      no_keywords: ["Internal Actions", "Note to self", "event_manage"]
+    note: >
+      Guest agent should respond naturally from injected context (painting quote).
+      Should NOT use event_manage (no event). May use exec for accumulate_context
+      or escalation — that's acceptable for a question about quote structure.
+
+  # --- Beat 2: Vendor asks a question within scope ---
+
+  - actor: bob_painter
+    message: >
+      Also, what color are you thinking for the exterior? I want to include
+      paint costs in the estimate.
+    expect:
+      no_keywords: ["Internal Actions", "Note to self"]
+    note: >
+      Guest agent doesn't know the color — should either say it'll check
+      with the homeowner (escalate) or ask Bob to include a few options.
+      Either response is acceptable.
+
+  # --- Beat 3: Vendor provides a decision that should be escalated ---
+
+  - actor: bob_painter
+    message: >
+      OK so I ran the numbers. Full exterior repaint including siding repair
+      would be $4,200. Just the repaint without siding is $2,800. I can start
+      as early as next Monday if you want to go ahead.
+    expect:
+      escalation: true
+      tools_used: ["exec"]
+    note: >
+      This contains a pricing decision and scheduling commitment — guest
+      agent MUST escalate to the primary user. Should use escalate.py
+      with trigger_type guest_update.
+
+  # --- Beat 4: Primary asks Homer about the painter ---
+
+  - actor: alex
+    message: >
+      Did the painter get back to us with a quote?
+    expect:
+      keywords: ["4,200", "2,800"]
+    note: >
+      Primary asks about the painting quote. Homer (main agent) should
+      know about the escalation and relay the pricing details.

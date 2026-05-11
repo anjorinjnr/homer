@@ -1,0 +1,4 @@
+# This directory holds Homer's household knowledge base.
+# familycontext.md is gitignored — it contains highly sensitive household data.
+# The archive/ subdirectory holds older maintenance history entries.
+# Structure is tracked; content is not.

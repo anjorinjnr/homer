@@ -1,0 +1,31 @@
+name: "File Recall — Practice Log Creation and Retrieval"
+event_id: "sim_file_recall"
+event_name: "File Recall Simulation"
+model: "gemini/gemini-3-pro-preview"
+
+# No setup needed — this tests basic file creation and memory-based recall.
+
+beats:
+  # Beat 1: Sam tells Homer to start logging music practice
+  - actor: seun_home
+    message: >
+      Hey Homer, I want to start tracking Kemi's music practice. She's been
+      practicing piano — she had 3 sessions this week. Monday she did 30 minutes
+      of scales and Twinkle Twinkle Little Star, Wednesday was 20 minutes just
+      scales, and today she did 25 minutes and started learning Mary Had a Little
+      Lamb. Can you create a log for this?
+    expect:
+      tools_used: ["write_file"]
+    note: "Homer should create a practice log file in files/ and save a memory note about it"
+
+  # Beat 2: Alex asks about practice in a NEW session (no conversation history)
+  # This is the critical test — Homer must find the file via memory, not context
+  - actor: alex
+    new_session: true
+    message: >
+      Hey Homer, how is Kemi's music practice going? How many times has she
+      practiced and what has she been working on?
+    expect:
+      keywords: ["Twinkle", "scales"]
+      tools_used: ["read_file"]
+    note: "New session — Homer must discover and read the practice log via memory hints, not conversation history"

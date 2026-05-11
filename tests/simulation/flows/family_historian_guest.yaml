@@ -1,0 +1,133 @@
+name: "Family Historian — Guest agent inbound capture"
+event_id: "sim_family_historian_guest"
+event_name: "Family Historian Guest Inbound"
+model: "gemini/gemini-3-pro-preview"
+
+# Seed the family_history scope with Helen as a participant so the guest
+# agent's allow_from includes her phone, and history_manage resolves her
+# contributor_id when called with the JID/phone.
+setup:
+  - tool: history_manage
+    args: ["--init"]
+  - tool: history_manage
+    args:
+      - "--add-contributor"
+      - "--contributor-id"
+      - "12345678-1234-1234-1234-123456789abc"
+      - "--phone"
+      - "+14125550010"
+      - "--name"
+      - "Helen"
+
+# All history_*.py exec calls hit Supabase in prod; mock here so the sim
+# can run offline and assert on tool sequence.
+mock_tools:
+  # Resolve a sender id (JID, phone, or UUID) to Helen's profile + context
+  - pattern: "history_manage\\.py.*--context"
+    response: |
+      {"contributor": {"id": "12345678-1234-1234-1234-123456789abc", "display_name": "Helen", "relationship": "Grandma", "status": "active"}, "recent_fragments": [], "open_threads": [], "era_coverage": [{"era_label": "childhood", "richness_score": 0.0}, {"era_label": "marriage", "richness_score": 0.0}]}
+
+  # Capture a raw message
+  - pattern: "history_manage\\.py.*--write-artifact"
+    response: |
+      {"artifact_id": "artifact-001", "contributor_id": "12345678-1234-1234-1234-123456789abc", "kind": "text", "channel": "whatsapp"}
+
+  # Extract structured fragments from an artifact
+  - pattern: "history_extract\\.py.*--artifact-id"
+    response: |
+      {"artifact_id": "artifact-001", "fragments_written": 2, "fragment_ids": ["frag-001", "frag-002"]}
+
+  # Pick a follow-up thread or signal era_gap
+  - pattern: "history_thread_pick\\.py.*--contributor-id"
+    response: |
+      {"thread_id": null, "kind": "era_gap", "era_label": "childhood", "prompt": "You haven't told me much about your early childhood — what do you remember about where you grew up?"}
+
+  # Add a follow-up thread (low-priority — agent shouldn't usually need this on first turn)
+  - pattern: "history_manage\\.py.*--add-thread"
+    response: |
+      {"status": "created", "thread_id": "thread-002"}
+
+beats:
+  # ── Beat 1: Substantive memory share → must capture ───────────────────────
+
+  - actor: grandma_helen
+    message: >
+      I grew up in a small village in Ekiti State. We didn't have much
+      but we were happy. My mother made the best jollof rice in the whole
+      village.
+    expect:
+      tools_used: ["message", "exec"]
+      tool_sequence:
+        - pattern: "^message$"
+          note: "Step 0 — immediate ack via message tool, FIRST tool call"
+        - pattern: "history_manage\\.py.*--context"
+          note: "Resolve sender + load fragments/threads"
+        - pattern: "history_manage\\.py.*--write-artifact"
+          note: "Capture — message has names, places, traditions"
+        - pattern: "history_extract\\.py"
+          note: "Extract fragments from the artifact"
+      keywords: ["Ekiti", "jollof"]
+      max_tool_calls: 8
+    note: >
+      The bread-and-butter case. Helen shares concrete memory content
+      (mother, village, jollof rice). The agent must (1) ack immediately,
+      (2) resolve the contributor by JID, (3) capture as an artifact,
+      (4) extract fragments, (5) compose a final reply that uses one of
+      the elicitation techniques (sensory anchor / concrete-instance probe).
+      No escalation; this is the happy path.
+
+  # ── Beat 2: Pure greeting → ack but skip capture ──────────────────────────
+
+  - actor: grandma_helen
+    message: "Good morning, dear."
+    expect:
+      tools_used: ["message", "exec"]
+      tool_sequence:
+        - pattern: "^message$"
+          note: "Immediate ack"
+        - pattern: "history_manage\\.py.*--context"
+          note: "Still resolves the sender — cheap, gives recent fragments/threads"
+      no_keywords: ["write-artifact"]
+      max_tool_calls: 5
+    note: >
+      Pure greeting with no recoverable content. SKILL.md prescribes
+      skipping --write-artifact for these. Agent should ack, --context,
+      and either reply briefly or stay silent. Never call write-artifact.
+
+  # ── Beat 3: The "suspicious echo" production case ─────────────────────────
+
+  - actor: grandma_helen
+    message: >
+      Hi Helen! It's wonderful to meet you. Thank you for sharing that
+      beautiful photo. I'd love to hear more about your family.
+    expect:
+      tools_used: ["message", "exec"]
+      tool_sequence:
+        - pattern: "^message$"
+          note: "Immediate ack"
+        - pattern: "history_manage\\.py.*--context"
+          note: "Resolve sender"
+        - pattern: "history_manage\\.py.*--write-artifact"
+          note: "Capture the raw message — preservation is non-negotiable"
+      max_tool_calls: 8
+    note: >
+      Production case (2026-05-03). Helen sent a message that looked
+      like it might be an echoed assistant greeting; the live agent
+      escalated and skipped capture. Desired behavior: ALWAYS capture
+      first — capture is a side-effect-free record of what arrived.
+      Escalation is optional after capture, not a substitute for it.
+      This is the beat where the prompt currently fails.
+
+  # ── Beat 4: Short ack from contributor → no capture ───────────────────────
+
+  - actor: grandma_helen
+    message: "thanks for asking"
+    expect:
+      tools_used: ["message", "exec"]
+      tool_sequence:
+        - pattern: "^message$"
+        - pattern: "history_manage\\.py.*--context"
+      no_keywords: ["write-artifact"]
+      max_tool_calls: 5
+    note: >
+      Short conversational ack with no story content. Skip capture.

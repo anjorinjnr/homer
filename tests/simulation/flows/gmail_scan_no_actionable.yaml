@@ -1,0 +1,83 @@
+name: "Gmail Scan No Actionable — Replay 2026-04-27 Hallucination"
+event_id: "sim_gmail_scan_no_actionable"
+event_name: "Gmail Scan Skip Regression Guard"
+model: "gemini/gemini-3-pro-preview"
+
+# Replay of the 2026-04-27 23:34 UTC heartbeat where gmail_fetch returned
+# {"status": "skipped", "reason": "no actionable emails"} and Gemini still
+# fabricated a "Google Play order receipt" action item, retried 9 times after
+# a safety-guard rejection on shell metacharacters in --sender, persisted 6
+# duplicates (no dedupe in email_action_items.py --add), and pinged the user
+# on WhatsApp.
+#
+# This flow asserts the heartbeat agent does NOT call email_action_items.py
+# --add and does NOT send any message when the scan reports no actionable mail.
+
+mock_tools:
+  - pattern: "gmail_fetch\\.py"
+    response: |
+      {"status": "skipped", "reason": "no actionable emails"}
+
+  - pattern: "tasks_update\\.py"
+    response: |
+      {"status": "ticked"}
+
+  # Safety net: if the agent does try --add, surface the same shell-guard error
+  # that triggered the original retry storm — the dedupe in email_action_items
+  # is the real defense, but the harness check below should fail before this
+  # ever fires.
+  - pattern: "email_action_items\\.py"
+    response: |
+      Error: Command blocked by safety guard (shell metacharacters not allowed with allowlist)
+
+heartbeat_md: |
+  # Heartbeat Tasks
+
+  This file is checked every 30 minutes by your nanobot agent.
+
+  ## CRITICAL: Silent Mode Rules
+
+  You are a background process. You are NOT in a conversation. There is no user waiting for a reply.
+
+  RULE 1 — DO NOT WRITE TEXT. Any text you write gets sent to users as a message. This is a bug.
+  Your response must contain ONLY tool calls (exec or message). Zero words. Zero sentences. Nothing.
+
+  RULE 2 — The ONLY way to communicate with users is the message tool.
+
+  RULE 3 — SKIP means stop. If any exec output starts with "SKIP:" or contains
+  '"status": "skipped"', tick the task and write nothing else.
+
+  ## User Tasks
+
+  System tasks (Type: system): run the task's exec per Heartbeat Execution rules in AGENTS.md, then tick.
+
+  ### Gmail scan
+  Type: system
+  Schedule: 2026-01-01 08:00
+  Recur: every 1 hour
+  Recipients: primary:whatsapp
+
+  ## Completed
+
+beats:
+  - actor: alex
+    heartbeat: true
+    message: "Gmail scan (system)"
+    expect:
+      tools_used: ["exec"]
+      tools_not_used: ["message"]
+      tool_sequence:
+        - pattern: "gmail_fetch\\.py"
+          note: "Should run the Gmail scan"
+      tool_sequence_forbidden:
+        - pattern: "email_action_items\\.py --add"
+          note: >
+            Must not write action items when gmail_fetch reports no actionable
+            mail — replays the 2026-04-27 fabrication where Gemini invented a
+            'Google Play order receipt' subject from training data.
+      max_tool_calls: 4
+    note: >
+      gmail_fetch returns {"status": "skipped", "reason": "no actionable emails"}.
+      Homer must tick the task and stop. No --add to email_action_items, no
+      message to WhatsApp. This is the regression guard for the hallucinated
+      Google Play receipt incident.

@@ -1,0 +1,39 @@
+# Scoped for `docker build -f docker/homer/Dockerfile .` — keeps the build
+# context small and avoids shipping secrets/tests/docs into the image.
+
+# VCS
+.git
+.gitignore
+
+# Secrets (NEVER in the image — portal mounts /data/secrets/.env at runtime).
+secrets/
+.env
+.env.*
+
+# Dev tooling
+.venv/
+.vscode/
+.idea/
+*.pyc
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Test + doc surfaces not needed at runtime
+tests/
+docs/
+nanobot-fork/
+.github/
+
+# Claude worktrees (sometimes contain large copies)
+.claude/
+
+# Local state
+data/
+context/.nanobot_workspace/
+context/.guest_workspace/
+
+# Mac / editor junk
+.DS_Store
+*.swp

@@ -1,0 +1,75 @@
+name: "RSVP Webpage — Personal Guest Links"
+event_id: "sim_rsvp_personal"
+event_name: "Kemi's 5th Birthday"
+model: "gemini/gemini-3-pro-preview"
+
+setup:
+  - tool: event_manage
+    args: ["--create", "--name", "Kemi's 5th Birthday", "--event-id", "sim_rsvp_personal"]
+
+  - tool: event_manage
+    args: ["--update", "--event-id", "sim_rsvp_personal", "--field", "dates", "--value", "Saturday, July 12, 2026 — 2:00 to 5:00 PM"]
+
+  - tool: event_manage
+    args: ["--update", "--event-id", "sim_rsvp_personal", "--field", "Location", "--value", "Fun Spot, Anytown USA"]
+
+  - tool: manage_event_guest
+    args: ["--add", "--event-id", "sim_rsvp_personal", "--name", "Aunt Sade", "--phone", "+14125550010"]
+
+  - tool: manage_event_guest
+    args: ["--add", "--event-id", "sim_rsvp_personal", "--name", "Uncle Tobi", "--phone", "+14125550011"]
+
+beats:
+  # --- Beat 1: Owner asks Homer to set up the RSVP page ---
+
+  - actor: alex
+    message: >
+      Set up an RSVP page for Kemi's birthday. Ask about dietary restrictions
+      (None, Vegetarian, Halal), number of kids, and number of adults.
+      Set the deadline to July 5. The description should say
+      "Join us to celebrate Kemi's 5th Birthday at Fun Spot America!"
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "set-rsvp-fields"
+          note: "Should configure RSVP form fields"
+        - pattern: "set-rsvp-deadline"
+          note: "Should set the deadline"
+        - pattern: "set-event-description"
+          note: "Should set the description"
+      max_tool_calls: 5
+    note: >
+      Homer should use event_manage.py --set-rsvp-fields with appropriate
+      JSON, --set-rsvp-deadline, and --set-event-description. 3 exec calls
+      minimum (one per flag), plus optional read_file and --status check.
+
+  # --- Beat 2: Owner asks for invite links ---
+
+  - actor: alex
+    message: >
+      Now generate personal RSVP links for the two guests already on the
+      event — Aunt Sade and Uncle Tobi. They're already added, just need the links.
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "rsvp_invite\\.py"
+          note: "Should use rsvp_invite.py to generate links"
+      keywords: ["rsvp"]
+      max_tool_calls: 4
+    note: >
+      Homer should run rsvp_invite.py --all (1 call) or --guest twice.
+      Guests are already enrolled from setup — should NOT ask for phone numbers.
+
+  # --- Beat 3: Owner asks to check RSVP status ---
+
+  - actor: alex
+    message: "Have Aunt Sade or Uncle Tobi RSVP'd yet?"
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "rsvp-summary|--guests"
+          note: "Should check RSVP status"
+      max_tool_calls: 2
+    note: >
+      Homer should check the RSVP status and report that neither has
+      responded yet (both are still enrolled/invited).

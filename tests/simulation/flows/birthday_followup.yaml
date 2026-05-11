@@ -1,0 +1,36 @@
+name: "Birthday Follow-up — Pending Reply Relay"
+event_id: "sim_bday_party"
+event_name: "Birthday Party Planning"
+model: "anthropic/claude-sonnet-4-20250514"
+
+setup:
+  - tool: event_manage
+    args: ["--create", "--name", "Birthday Party Planning", "--event-id", "sim_bday_party"]
+
+  - tool: event_manage
+    args: ["--update", "--event-id", "sim_bday_party", "--field", "dates", "--value", "2026-05-10"]
+
+  - tool: event_manage
+    args: ["--update", "--event-id", "sim_bday_party", "--field", "Description", "--value", "Birthday party for the kids"]
+
+  - tool: manage_event_guest
+    args: ["--add", "--event-id", "sim_bday_party", "--name", "Sam", "--phone", "+14125550004"]
+
+beats:
+  # Alex asks Homer to check with Sam
+  - actor: alex
+    message: >
+      Ask Sam for the birthday party location ideas — she said she had
+      some places in mind. Let me know what she says.
+    expect:
+      tools_used: ["message"]
+    note: "Homer should message Sam and track the pending reply"
+
+  # Sam replies with her ideas — guest agent should relay to Alex
+  - actor: sam
+    message: >
+      I was thinking either the trampoline park on Highway 74 or
+      that new bowling alley downtown. Both do party packages for kids.
+    expect:
+      tools_used: ["message"]
+    note: "Guest agent should relay Sam's reply to Alex via message tool and complete the follow-up"

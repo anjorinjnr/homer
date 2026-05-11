@@ -1,0 +1,53 @@
+name: "WhatsApp LID Identity — Guest Name Resolution"
+event_id: "sim_lid_identity"
+event_name: "Asheville Trip"
+model: "gemini/gemini-3-flash-preview"
+
+# Minimal setup — just the event. Guests are added by Alex during conversation.
+setup:
+  - tool: event_manage
+    args: ["--create", "--name", "Asheville Trip", "--event-id", "sim_lid_identity"]
+
+  - tool: event_manage
+    args: ["--update", "--event-id", "sim_lid_identity", "--field", "dates", "--value", "2026-08-15 to 2026-08-18"]
+
+  - tool: event_manage
+    args: ["--update", "--event-id", "sim_lid_identity", "--field", "Location", "--value", "Asheville, NC"]
+
+beats:
+  # --- Alex invites guests (mirrors real life: give Homer a name + number) ---
+
+  - actor: alex
+    message: >
+      Add Emeka (+14125550002) and Wale (+14125550003) to the Asheville trip
+      as guests. Then message both of them with the trip dates and location.
+    rebuild: true
+    note: >
+      Alex invites guests by name+phone. Homer adds them and sends first outbound.
+      rebuild: true triggers lid_map synthesis (simulates bridge ack) and
+      regenerates sender_map with phone+LID entries.
+
+  # --- Case 1: Guest replies via phone JID (pn available) ---
+
+  - actor: emeka
+    message: "Sounds fun! What's the plan for the trip?"
+    expect:
+      no_keywords: ["14125550002", "unknown"]
+    note: "Emeka replies via phone JID. Identity resolved from sender_map phone entry."
+
+  # --- Case 2: Guest replies via LID (no pn — bridge learned LID on outbound) ---
+
+  - actor: wale_lid
+    message: "Hey, what dates are we looking at? I need to check my calendar."
+    expect:
+      no_keywords: ["914125550003", "unknown", "lid"]
+    note: "Wale replies via LID JID. Identity resolved from sender_map LID entry (via lid_map cross-reference)."
+
+  # --- Case 3: Admin asks about guests — should see names, not IDs ---
+
+  - actor: alex
+    message: "What have the guests said about the trip so far?"
+    expect:
+      keywords: ["Emeka", "Wale"]
+      no_keywords: ["14125550002", "914125550003", "lid"]
+    note: "Admin asks about guest activity. Homer references guests by name, not phone or LID."

@@ -1,0 +1,111 @@
+# Homer capabilities manifest
+#
+# A "capability" is a bundle of everything that turns on together for one
+# user-visible feature: skill guidance, tool scripts (+ whitelist), heartbeat
+# system tasks, agent-instruction blocks, and required env vars.
+#
+# This file defines what bundles *exist* and each one's ship default. What
+# a household actually has enabled is the per-cap `default_enabled` (below),
+# overridden by its own `context/user_context/features.yaml`.
+#
+# A capability with no `default_enabled` field defaults to true. Set
+# `default_enabled: false` for capabilities that shouldn't be on for a new
+# household without an explicit opt-in (e.g. ones that need third-party
+# credentials or carry sensitive data).
+#
+# Bare-VPS parity: if this whole file is missing at runtime, every block is
+# kept and every gated skill loads (the "no gating exists" path).
+#
+# Non-opt-in skills (gmail, calendar, drive, maintenance, event-management,
+# onboarding, weather, etc.) are not listed here — they load unconditionally.
+# Only features that are genuinely optional live below.
+
+capabilities:
+
+  finance_plaid:
+    default_enabled: false
+    description: >
+      Live bank balance tracking, monthly spending reports, and category
+      budgets via Plaid.
+    skills:
+      - finance
+    tools:
+      - plaid_fetch.py
+      - plaid_balance_check.py
+      - plaid_monthly_report.py
+      - budget_check.py
+      - payee_label_add.py
+    system_tasks:
+      - "Balance check"
+      - "Monthly spending report"
+      - "Budget alert check"
+    requires_env:
+      - PLAID_CLIENT_ID
+      - PLAID_SECRET
+      - PLAID_ACCESS_TOKEN_ALLY
+
+  skyvern:
+    default_enabled: false
+    description: >
+      Delegate browser-based web automation tasks (form fills, bookings) to
+      Skyvern.
+    skills:
+      - skyvern
+    tools:
+      - skyvern_task.py
+    requires_env:
+      - SKYVERN_API_KEY
+
+  health:
+    description: >
+      Per-person health record tracking (conditions, medications, visits).
+    skills:
+      - health
+    tools:
+      - health_records.py
+
+  vault:
+    description: >
+      Encrypted storage for sensitive household secrets (account numbers,
+      membership IDs, etc.) accessed through the vault skill.
+    skills:
+      - vault
+    tools:
+      - vault.py
+
+  meal_planning:
+    description: >
+      Weekly meal plan generation, pantry tracking, and shopping list
+      assembly.
+    skills:
+      - meal-planning
+    tools:
+      - meal_plan.py
+
+  analytics:
+    description: >
+      Homer usage analytics — weekly usage reports and skill/tool stats.
+    skills:
+      - analytics
+    tools:
+      - analytics_query.py
+    system_tasks:
+      - "Weekly usage report"
+
+  family_history:
+    description: >
+      Family oral-history collection: WhatsApp/web contributor onboarding,
+      artifact storage, fragment extraction, story drafting, and public
+      timeline sharing.
+    skills:
+      - family-historian
+    tools:
+      - history_manage.py
+      - history_invite.py
+      - history_extract.py
+      - history_thread_pick.py
+      - history_era_recompute.py
+      - history_publish.py
+    requires_env:
+      - SUPABASE_URL
+      - SUPABASE_SERVICE_KEY

@@ -1,0 +1,123 @@
+name: "Feedback — Bug, Feature, Kudos, No-trigger"
+event_id: "sim_feedback"
+event_name: "Feedback Skill Simulation"
+model: "gemini/gemini-3-pro-preview"
+
+# The /feedback skill files user feedback as a GitHub issue in the deployment's
+# private team-internal repo (configured via HOMER_FEEDBACK_REPO; the homer repo
+# itself is open source). It must:
+#   1. Trigger on /feedback or natural feedback intent (bug/feature/kudos)
+#   2. Confirm category, capture the message in the user's words
+#   3. Ask about conversation share for bug/feature, SKIP for kudos
+#   4. Exec feedback_submit.py with the right flags
+#   5. NOT trigger on household-internal statements ("Kemi was grumpy")
+#
+# We mock feedback_submit.py so the eval doesn't hit GitHub. The mock returns
+# the same JSON shape the real tool emits on success.
+
+mock_tools:
+  # Most-permissive last: --include-conversation matched first, then plain.
+  - pattern: "feedback_submit\\.py.*--include-conversation"
+    response: |
+      {"ok": true, "issue_url": "https://github.com/example-org/example-repo/issues/9001", "issue_number": 9001}
+
+  - pattern: "feedback_submit\\.py"
+    response: |
+      {"ok": true, "issue_url": "https://github.com/example-org/example-repo/issues/9000", "issue_number": 9000}
+
+beats:
+  # ── Beat 1 — explicit /feedback for a bug, declines conversation share ───────
+  - actor: alex
+    message: "/feedback the weather skill is timing out for me today"
+    expect:
+      keywords: ["bug"]
+      no_keywords: ["log_learning", "context_updater"]
+      max_tool_calls: 3
+    note: >
+      Homer should recognize /feedback, classify as a bug, and ask if Alex
+      wants to share the recent conversation. Should NOT immediately exec
+      feedback_submit yet (waiting on the convo-share answer first). Should
+      NOT route to log_learning (that's the internal channel) or
+      context_updater. "bug" alone is the classification signal — don't gate
+      on the schema word "category" since natural replies often skip it.
+
+  - actor: alex
+    message: "no, don't share the conversation. just submit it."
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "feedback_submit\\.py.*--category bug"
+          note: "Should call feedback_submit.py with --category bug"
+      tool_sequence_forbidden:
+        - pattern: "feedback_submit\\.py.*--include-conversation"
+          note: "User declined; --include-conversation must NOT be set"
+      keywords: ["thanks"]
+      no_keywords: ["#9000", "9000", "issue", "github"]
+      max_tool_calls: 3
+    note: >
+      Homer submits via exec without --include-conversation, then thanks the
+      user. Must NOT leak the issue number, URL, or "github" — those are
+      internal IDs on a private repo and mean nothing to the tenant. Reply
+      should be short ("thanks for the feedback") not bureaucratic.
+
+  # ── Beat 2 — feature request, user opts into conversation share ─────────────
+  - actor: alex
+    message: "I have a feature request: it would be cool if you could remind me about subscriptions before they renew"
+    expect:
+      keywords: ["anonymize"]
+      no_keywords: ["log_learning"]
+      max_tool_calls: 3
+    note: >
+      Homer recognizes feature-request shape and asks the convo-share consent
+      question. We assert "anonymize" because that's prescribed by the skill
+      for the consent prompt — and unlike "feature"/"category", it's a word
+      the LLM is highly unlikely to drop in a natural rephrasing.
+
+  - actor: alex
+    message: "yes go ahead and share the conversation"
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "feedback_submit\\.py.*--category feature.*--include-conversation"
+          note: "Should call with --category feature AND --include-conversation"
+      keywords: ["thanks"]
+      no_keywords: ["#9001", "9001", "issue", "github"]
+      max_tool_calls: 3
+    note: >
+      Homer submits with --include-conversation; mock returns issue 9001.
+      Reply should be a short thank-you with NO issue number or URL leaked.
+
+  # ── Beat 3 — kudos: should NOT ask about conversation share ─────────────────
+  - actor: alex
+    message: "/feedback the morning briefing today was perfect, exactly what I needed"
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "feedback_submit\\.py.*--category kudos"
+          note: "Kudos category, no convo-share question for positive feedback"
+      tool_sequence_forbidden:
+        # Kudos doesn't include conversation by default — no PII to debug, no
+        # repro to capture. The skill explicitly says skip the convo question.
+        - pattern: "feedback_submit\\.py.*--include-conversation"
+          note: "Kudos must NOT include conversation excerpt by default"
+      no_keywords: ["share", "anonymize", "#9000", "9000", "issue", "github"]
+      max_tool_calls: 3
+    note: >
+      For positive feedback, Homer should file kudos directly without the
+      consent-to-share prompt. The skill explicitly tells the agent to skip
+      that step for kudos.
+
+  # ── Beat 4 — household statement should NOT trigger /feedback ───────────────
+  - actor: alex
+    message: "Kemi was grumpy today, I think she's tired from school"
+    expect:
+      tool_sequence_forbidden:
+        - pattern: "feedback_submit\\.py"
+          note: "Household observations are not Homer-team feedback"
+      no_keywords: ["feedback to the team", "filed", "issue #"]
+    note: >
+      An observation about a family member is NOT feedback for the Homer team.
+      It might trigger context_updater or no tool at all, but never
+      feedback_submit. Critical regression: the skill's trigger list must not
+      over-match on the word "feedback" or "didn't go well" patterns about
+      the household itself.

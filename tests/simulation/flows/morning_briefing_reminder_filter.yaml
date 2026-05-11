@@ -1,0 +1,155 @@
+name: "Morning Briefing — Reminder Filtering (agentic + far-future exclusion)"
+event_id: "sim_morning_briefing_reminder_filter"
+event_name: "Morning Briefing Reminder Filter Simulation"
+model: "gemini/gemini-3.1-pro-preview"
+
+# What this flow proves
+# ─────────────────────
+# Regression guard for the 2026-04-20 bug where the morning briefing surfaced:
+#   1. Agentic Homer tasks (math plan, math report, daily reminder update) — Homer's
+#      own scheduled work, not user-facing reminders.
+#   2. Tasks typed agentic but also carrying a goal field.
+#   3. A plain reminder (no type, no goal) scheduled 9+ days in the future (Chase CSV).
+#   4. A plain reminder scheduled months in the future (HVAC filter).
+#   5. (2026-04-30) A plain reminder scheduled for later today — heartbeat fires
+#      it at its own schedule time, so surfacing in the brief is duplication.
+#
+# After the fix (morning_briefing.py):
+#   - tasks with a goal field are excluded regardless of type
+#   - tasks scheduled today or earlier are excluded (they fire on heartbeat)
+#   - tasks scheduled > 5 days from today are excluded
+#
+# The mock returns morning_briefing.py output that already reflects correct
+# post-fix filtering. message_patterns_forbidden enforces that the problematic
+# task names never reach the user's WhatsApp message, regardless of model.
+#
+# Complementary unit tests with full date-frozen coverage live in:
+#   tests/test_morning_briefing.py  →  class TestReminderFiltering
+
+mock_tools:
+  - pattern: "morning_briefing\\.py(?! --log-motivation)"
+    response: |
+      {
+        "type": "morning_briefing",
+        "date": "2026-04-20",
+        "today_events": [
+          {"title": "Kemi swim class", "date": "2026-04-20", "time": "2:00 PM", "display_date": "Today", "display_time": "2pm"},
+          {"title": "Dentist — Alex", "date": "2026-04-20", "time": "4:30 PM", "display_date": "Today", "display_time": "4:30pm"}
+        ],
+        "week_events": [
+          {"title": "Kemi karate", "date": "2026-04-21", "time": "4:00 PM", "display_date": "Tomorrow", "display_time": "4pm"}
+        ],
+        "action_items": [
+          {
+            "subject": "Anytown water bill",
+            "sender": "waterbills@example.com",
+            "action": "Pay by 05/04/2026",
+            "urgency": "this_week",
+            "display_urgency": "this week"
+          }
+        ],
+        "reminders": [
+          {
+            "description": "Pick up dry cleaning",
+            "schedule": "2026-04-24",
+            "display_when": "Fri Apr 24",
+            "recipients": "14125550001:whatsapp"
+          }
+        ],
+        "users": [
+          {"name": "Alex"},
+          {"name": "Sam", "briefing_style": "plain bullets, no emoji, skip the motivation line"}
+        ],
+        "recent_motivations": [
+          "Little wins add up — have a great one.",
+          "Make today count, friend."
+        ]
+      }
+
+  - pattern: "morning_briefing\\.py --log-motivation"
+    response: |
+      {"status": "logged", "kept": 3}
+
+  - pattern: "tasks_update\\.py --tick"
+    response: |
+      {"status": "ticked"}
+
+heartbeat_md: |
+  # Heartbeat Tasks
+
+  This file is checked every 30 minutes by your nanobot agent.
+
+  ## CRITICAL: Silent Mode Rules
+
+  You are a background process. You are NOT in a conversation. There is no user waiting for a reply.
+
+  RULE 1 — DO NOT WRITE TEXT. Any text you write gets sent to users as a message. This is a bug.
+  Your response must contain ONLY tool calls (exec or message). Zero words. Zero sentences. Nothing.
+
+  RULE 2 — The ONLY way to communicate with users is the message tool.
+  Only call message when you have real content to deliver (an email alert, the morning briefing, a due reminder).
+
+  RULE 3 — SKIP means stop. If any exec output starts with "SKIP:", tick the task and write nothing else.
+
+  RULE 4 — Empty results mean silence. No emails → tick, no message. No due tasks → no message.
+
+  ## User Tasks
+
+  System tasks (Type: system): run the task's exec per Heartbeat Execution rules in AGENTS.md, then tick.
+
+  ### Morning briefing
+  Type: system
+  Schedule: 2026-01-01 07:00
+  Recur: every 1 day
+  Recipients: primary:whatsapp,sam:whatsapp
+
+  ## Completed
+
+beats:
+  - actor: alex
+    heartbeat: true
+    message: "Morning briefing (system)"
+    expect:
+      tools_used: ["exec", "message"]
+      message_channels: ["whatsapp"]
+      message_channels_forbidden: ["email", "telegram"]
+      message_chat_ids:
+        - "14125550001"
+        - "14125550004"
+      # The five tasks that were incorrectly surfacing before the fix must never
+      # appear in any message sent to the user.
+      message_patterns_forbidden:
+        - "(?i)update kemi.*daily math"
+        - "(?i)generate kemi.*weekly math"
+        - "(?i)kemi.*monthly math report"
+        - "(?i)upload chase"
+        - "(?i)hvac filter"
+        # Today-scheduled reminder fires on its own — must not appear in brief
+        - "(?i)call dentist to schedule"
+        # Raw format leaks (unchanged from the base morning_briefing flow)
+        - "14:00"
+        - "09:00"
+        - "this_week"
+        - "2026-04-20 10:00"
+      # Legitimate reminders and events must surface
+      message_patterns:
+        - "(?i)dry cleaning"
+        - "(?i)water bill"
+        - "(?i)today"
+        - "(?i)tomorrow"
+      tool_sequence:
+        - pattern: "morning_briefing\\.py"
+          note: "Must fetch briefing data first"
+        - pattern: "morning_briefing\\.py --log-motivation"
+          note: "Must log the motivation after sending (Alex gets default style with motivation)"
+        - pattern: "tasks_update\\.py --tick"
+          note: "Must tick the Morning briefing task"
+      max_tool_calls: 16
+    note: >
+      Regression guard for the 2026-04-20 + 2026-04-30 bugs. Six tasks were
+      incorrectly appearing in the briefing: three Homer agentic tasks (math plan,
+      daily reminder update, monthly report), two far-future plain reminders
+      (Chase CSV 9 days out, HVAC filter months out), and a today-scheduled
+      reminder (dentist call) that fires on its own at its schedule time. None of
+      their names may appear in the message sent to the user. Only the
+      multi-day-out reminder (dry cleaning Fri) must appear.

@@ -1,0 +1,66 @@
+name: "Vault — Secure Reference Data Storage"
+event_id: "sim_vault"
+event_name: "Vault Simulation"
+model: "gemini/gemini-3-pro-preview"
+
+# Pre-seed some vault entries for retrieval tests.
+setup:
+  - tool: vault
+    args: ["--set", "marriott_bonvoy", "072663520", "--label", "Marriott Bonvoy loyalty number"]
+  - tool: vault
+    args: ["--set", "plaid_recovery_code", "NFGZD4JVFB3BXJGQTI", "--label", "Plaid recovery code"]
+  - tool: vault
+    args: ["--set", "liberty_mutual_policy", "H31-447-829105-40", "--label", "Liberty Mutual auto insurance policy"]
+
+beats:
+  # --- Phase 1: Retrieve a stored value ---
+
+  - actor: alex
+    message: >
+      What's my Marriott Bonvoy number? I need it for a hotel reservation.
+    expect:
+      tool_called: vault.py
+      tool_args_contain: ["--get", "marriott_bonvoy"]
+      response_contains: "072663520"
+      response_style: short
+
+  # --- Phase 2: Store a new value ---
+
+  - actor: alex
+    message: >
+      Save my Costco membership number — it's 111874509236.
+    expect:
+      tool_called: vault.py
+      tool_args_contain: ["--set", "costco"]
+      response_style: short
+
+  # --- Phase 3: List what's stored ---
+
+  - actor: alex
+    message: >
+      What do you have saved in the vault?
+    expect:
+      tool_called: vault.py
+      tool_args_contain: ["--list"]
+      response_contains_any: ["marriott", "costco", "plaid", "liberty"]
+      response_must_not_contain: ["NFGZD4", "H31-447"]
+
+  # --- Phase 4: Use a value in context without echoing ---
+
+  - actor: alex
+    message: >
+      Can you draft a message to Liberty Mutual about my auto claim?
+      Include my policy number in the message.
+    expect:
+      tool_called: vault.py
+      tool_args_contain: ["--get", "liberty_mutual"]
+
+  # --- Phase 5: Remove a value ---
+
+  - actor: alex
+    message: >
+      Remove the Plaid recovery code from the vault, I've changed it.
+    expect:
+      tool_called: vault.py
+      tool_args_contain: ["--remove", "plaid_recovery_code"]
+      response_style: short

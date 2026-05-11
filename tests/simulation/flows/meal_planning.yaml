@@ -1,0 +1,135 @@
+name: "Meal Planning — Weekly Dinner Plan & Grocery Run"
+event_id: "sim_meal_planning"
+event_name: "Meal Planning Simulation"
+model: "gemini/gemini-3-pro-preview"
+
+# Seed the recipe library and pantry with realistic household data.
+setup:
+  # Pantry staples the family always has
+  - tool: meal_plan
+    args: ["--add-pantry", "--item", "olive oil", "--category", "pantry", "--notes", "Costco bulk"]
+  - tool: meal_plan
+    args: ["--add-pantry", "--item", "salt", "--category", "pantry"]
+  - tool: meal_plan
+    args: ["--add-pantry", "--item", "pepper", "--category", "pantry"]
+  - tool: meal_plan
+    args: ["--add-pantry", "--item", "garlic", "--category", "produce"]
+  - tool: meal_plan
+    args: ["--add-pantry", "--item", "rice", "--category", "pantry", "--notes", "Jasmine, 25lb bag"]
+  - tool: meal_plan
+    args: ["--add-pantry", "--item", "butter", "--category", "dairy"]
+  - tool: meal_plan
+    args: ["--add-pantry", "--item", "onion", "--category", "produce"]
+
+  # A few known recipes in the library
+  - tool: meal_plan
+    args: ["--add-meal", "--name", "Jollof Rice with Chicken", "--meal-type", "dinner", "--servings", "4", "--prep-time", "45", "--tags", "nigerian,family-favorite", "--rating", "5"]
+  - tool: meal_plan
+    args: ["--add-ingredient", "--meal-id", "1", "--item", "chicken thighs", "--quantity", "2 lbs", "--category", "meat"]
+  - tool: meal_plan
+    args: ["--add-ingredient", "--meal-id", "1", "--item", "tomato paste", "--quantity", "1 can", "--category", "pantry"]
+  - tool: meal_plan
+    args: ["--add-ingredient", "--meal-id", "1", "--item", "bell peppers", "--quantity", "3", "--category", "produce"]
+  - tool: meal_plan
+    args: ["--add-ingredient", "--meal-id", "1", "--item", "rice", "--quantity", "3 cups", "--category", "pantry"]
+
+  - tool: meal_plan
+    args: ["--add-meal", "--name", "Pasta with Roasted Vegetables", "--meal-type", "dinner", "--servings", "4", "--prep-time", "30", "--tags", "quick,vegetarian,kid-friendly", "--rating", "4"]
+  - tool: meal_plan
+    args: ["--add-ingredient", "--meal-id", "2", "--item", "penne pasta", "--quantity", "1 lb", "--category", "pantry"]
+  - tool: meal_plan
+    args: ["--add-ingredient", "--meal-id", "2", "--item", "zucchini", "--quantity", "2", "--category", "produce"]
+  - tool: meal_plan
+    args: ["--add-ingredient", "--meal-id", "2", "--item", "parmesan cheese", "--quantity", "1 cup", "--category", "dairy"]
+
+  - tool: meal_plan
+    args: ["--add-meal", "--name", "Grilled Salmon with Asparagus", "--meal-type", "dinner", "--servings", "4", "--prep-time", "25", "--tags", "quick,healthy", "--rating", "5"]
+  - tool: meal_plan
+    args: ["--add-ingredient", "--meal-id", "3", "--item", "salmon fillets", "--quantity", "4", "--category", "meat"]
+  - tool: meal_plan
+    args: ["--add-ingredient", "--meal-id", "3", "--item", "asparagus", "--quantity", "1 bunch", "--category", "produce"]
+  - tool: meal_plan
+    args: ["--add-ingredient", "--meal-id", "3", "--item", "lemon", "--quantity", "2", "--category", "produce"]
+
+  - tool: meal_plan
+    args: ["--add-meal", "--name", "Tacos", "--meal-type", "dinner", "--servings", "4", "--prep-time", "20", "--tags", "quick,kid-friendly", "--rating", "4"]
+
+  - tool: meal_plan
+    args: ["--add-meal", "--name", "Chicken Stir Fry", "--meal-type", "dinner", "--servings", "4", "--prep-time", "25", "--tags", "quick,healthy,kid-friendly", "--rating", "3"]
+
+beats:
+  # --- Phase 1: Ask for meal suggestions ---
+
+  - actor: alex
+    message: >
+      Homer, I need to plan dinners for this week. What do we have in the recipe library?
+      Something quick for the weeknights — Sam and I are both busy.
+    expect:
+      keywords: ["Pasta", "Stir Fry"]
+    note: "Homer should list the recipe library, highlighting quick options"
+
+  # --- Phase 2: Plan the week ---
+
+  - actor: alex
+    message: >
+      OK let's do this for the week:
+      Monday — Chicken Stir Fry,
+      Tuesday — Pasta with Roasted Vegetables,
+      Wednesday — Tacos,
+      Thursday — Grilled Salmon with Asparagus,
+      Friday — Jollof Rice.
+      Schedule those please.
+    expect:
+      keywords: ["Monday", "Friday"]
+      tools_used: ["exec"]
+    note: "Homer should schedule all 5 meals to dates using meal_plan.py"
+
+  # --- Phase 3: Generate grocery list ---
+
+  - actor: alex
+    message: >
+      Now generate the grocery list for this week. We already have all the pantry
+      staples — don't include those. Group by section.
+    expect:
+      keywords: ["salmon", "chicken"]
+      tools_used: ["exec"]
+    note: "Homer should create a grocery list from the planned meals, excluding pantry items like rice and olive oil"
+
+  # --- Phase 4: Add manual items ---
+
+  - actor: alex
+    message: >
+      Also add Kemi's yogurt pouches and some bananas to the grocery list.
+    expect:
+      tools_used: ["exec"]
+    note: "Homer should add manual items to the existing grocery list"
+
+  # --- Phase 5: Rate a past meal ---
+
+  - actor: alex
+    message: >
+      Oh by the way — we made the Chicken Stir Fry last week and Kemi actually
+      loved it. Bump that one to a 5.
+    expect:
+      tools_used: ["exec"]
+    note: "Homer should update the rating for Chicken Stir Fry from 3 to 5"
+
+  # --- Phase 6: Leftover suggestion ---
+
+  - actor: alex
+    message: >
+      We have leftover salmon from last night and half a bag of spinach.
+      Any ideas for what to make with that tonight?
+    note: "Homer should suggest a meal using these leftovers — doesn't need a tool call, general knowledge is fine"
+
+  # --- Phase 7: Add a new recipe ---
+
+  - actor: alex
+    message: >
+      Sam made this amazing egusi soup last weekend. Add it to the recipe library:
+      Nigerian, serves 6, takes about an hour. Ingredients: egusi seeds 2 cups,
+      spinach 1 bunch, palm oil 1/2 cup, stockfish 1/2 lb, beef 1 lb, crayfish
+      2 tablespoons, onion 1, scotch bonnet peppers 3.
+    expect:
+      tools_used: ["exec"]
+    note: "Homer should add the meal and all ingredients using multiple tool calls"

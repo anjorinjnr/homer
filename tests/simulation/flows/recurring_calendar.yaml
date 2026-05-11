@@ -1,0 +1,74 @@
+name: "Recurring Calendar — Weekly Swim Class Schedule"
+event_id: "sim_recurring_calendar"
+event_name: "Recurring Calendar Simulation"
+model: "gemini/gemini-3-pro-preview"
+
+# No setup needed — this tests calendar_add.py with --recur flag.
+
+beats:
+  # Beat 1: Sam asks Homer to add a recurring weekly swim schedule
+  - actor: seun_home
+    message: >
+      Here's Kemi's swim schedule. Add these to the calendar as recurring weekly events:
+
+      Tuesdays @ 4:30 PM
+      Thursdays @ 4:30 PM
+      Saturdays @ 3:00 PM
+      Sundays @ 2:00 PM
+    expect:
+      keywords: ["recurring"]
+      no_keywords: ["manually", "Google Calendar app", "Repeat Weekly"]
+    note: >
+      Homer should recognize it can create recurring events. It will confirm
+      details first per skill rules. Must NOT tell user to manually set repeat.
+
+  # Beat 2: Confirm the swim schedule
+  - actor: seun_home
+    message: "Yes, go ahead"
+    expect:
+      tools_used: ["exec"]
+    note: >
+      After confirmation, Homer should exec calendar_add.py with --recur weekly
+      for each day's swim class.
+
+  # Beat 3: Ask to add a simple daily recurring event
+  - actor: alex
+    new_session: true
+    message: >
+      Add a recurring daily event called "Morning Vitamins" at 8:00 AM
+      starting tomorrow. Put it on the calendar.
+    expect:
+      keywords: ["daily"]
+      no_keywords: ["can't", "cannot", "unable", "manually", "Google Calendar app"]
+    note: >
+      Homer should confirm details for the daily recurring event.
+      Must NOT say it can't create recurring events or tell user to set repeat manually.
+
+  # Beat 4: Confirm vitamins event
+  - actor: alex
+    message: "Yes looks good"
+    expect:
+      tools_used: ["exec"]
+    note: "Homer should exec calendar_add.py with --recur daily."
+
+  # Beat 5: Custom recurrence with specific days
+  - actor: alex
+    new_session: true
+    message: >
+      I need a recurring calendar event for Kemi's karate class —
+      every Monday and Wednesday at 4:00 PM starting next week.
+    expect:
+      keywords: ["Monday", "Wednesday"]
+      no_keywords: ["can't", "cannot", "unable"]
+    note: >
+      Homer should propose the recurring event details.
+      Should handle Mon/Wed schedule via RRULE or separate weekly events.
+
+  # Beat 6: Confirm karate event
+  - actor: alex
+    message: "Yep, add it"
+    expect:
+      tools_used: ["exec"]
+    note: >
+      Homer should exec calendar_add.py with --recur (either RRULE or
+      separate weekly calls for Mon and Wed).

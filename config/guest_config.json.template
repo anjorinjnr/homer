@@ -1,0 +1,111 @@
+{
+  "providers": {
+    "anthropic": {
+      "apiKey": "${ANTHROPIC_API_KEY}"
+    },
+    "gemini": {
+      "apiKey": "${GEMINI_API_KEY}"
+    },
+    "groq": {
+      "apiKey": "${GROQ_API_KEY}"
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": "${HOMER_GUEST_MODEL}",
+      "provider": "${HOMER_GUEST_PROVIDER}",
+      "workspace": "/opt/homer/context/.guest_workspace",
+      "contextWindowTokens": 100000,
+      "idleCompactAfterMinutes": 15,
+      "scopeContextProvider": "scope_store:render_scope_context_for_sender",
+      "disableMemoryWrites": true,
+      "dream": { "enabled": false }
+    }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": false,
+      "token": "${TELEGRAM_GUEST_BOT_TOKEN}",
+      "allowFrom": []
+    },
+    "whatsapp": {
+      "enabled": true,
+      "allow_from": [],
+      "identity_resolution": true,
+      "sender_map_path": "${HOMER_GUEST_WORKSPACE}/sender_map.json"
+    },
+    "email": {
+      "enabled": false,
+      "consentGranted": true,
+      "authMethod": "oauth2",
+      "oauth2CredentialsFile": "${HOMER_SECRETS}/tokens/homer.pickle",
+      "imapHost": "imap.gmail.com",
+      "imapPort": 993,
+      "imapUsername": "${HOMER_EMAIL_ADDRESS}",
+      "smtpHost": "smtp.gmail.com",
+      "smtpPort": 587,
+      "smtpUsername": "${HOMER_EMAIL_ADDRESS}",
+      "fromAddress": "${HOMER_EMAIL_ADDRESS}",
+      "useIdle": true,
+      "allowFrom": [],
+      "verifyDkim": true,
+      "verifySpf": true
+    },
+    "spamGuard": {
+      "enabled": true,
+      "windowS": 300,
+      "maxRepeats": 2
+    }
+  },
+  "gateway": {
+    "port": 18791,
+    "heartbeat": {
+      "enabled": true,
+      "intervalS": 60,
+      "lastRunTracking": true,
+      "suppressErrors": true,
+      "preCheckRegistry": {
+        "escalations": "${HOMER_VENV} ${HOMER_TOOLS}/scope_store.py --pending-escalations"
+      }
+    }
+  },
+  "tools": {
+    "restrictToWorkspace": true,
+    "exec": {
+      "allowPatterns": [
+        "^${HOMER_VENV} ${HOMER_TOOLS}/escalate\\.py(\\s[\\s\\S]*)?$",
+        "^${HOMER_VENV} ${HOMER_TOOLS}/deliver_escalation\\.py(\\s[\\s\\S]*)?$",
+        "^${HOMER_VENV} ${HOMER_TOOLS}/event_manage\\.py(\\s[\\s\\S]*)?$",
+        "^${HOMER_VENV} ${HOMER_TOOLS}/accumulate_context\\.py(\\s[\\s\\S]*)?$",
+        "^${HOMER_VENV} ${HOMER_TOOLS}/pending_reply\\.py(\\s[\\s\\S]*)?$",
+        "^${HOMER_VENV} ${HOMER_TOOLS}/history_manage\\.py\\s+--(?!write-artifact\\b)[a-z-]+(\\s[\\s\\S]*)?$",
+        "^${HOMER_VENV} ${HOMER_TOOLS}/history_thread_pick\\.py(\\s[\\s\\S]*)?$",
+        "^${HOMER_VENV} ${HOMER_TOOLS}/history_invite\\.py(\\s[\\s\\S]*)?$",
+        "^history_manage\\.py\\s+--(?!write-artifact\\b)[a-z-]+(\\s[\\s\\S]*)?$",
+        "^history_thread_pick\\.py(\\s[\\s\\S]*)?$",
+        "^history_invite\\.py(\\s[\\s\\S]*)?$"
+      ],
+      "allowedEnvKeys": [
+        "ANTHROPIC_API_KEY",
+        "GEMINI_API_KEY",
+        "HOMER_HOME",
+        "HOMER_WORKSPACE",
+        "HOMER_GUEST_WORKSPACE",
+        "HOMER_TIMEZONE",
+        "HOMER_EVENTS_DIR",
+        "HOMER_SCOPE_DB",
+        "HOMER_EVENTS_DB",
+        "HOMER_SIM",
+        "HOMER_EMAIL_ADDRESS",
+        "HOMER_EMAIL_DISPLAY_NAME",
+        "SUPABASE_URL",
+        "SUPABASE_SERVICE_KEY",
+        "HOMER_HOUSEHOLD_ID"
+      ]
+    },
+    "audit": {
+      "enabled": true
+    },
+    "mcpServers": {}
+  }
+}

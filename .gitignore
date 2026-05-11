@@ -1,0 +1,103 @@
+# === NEVER COMMIT THESE ===
+
+# Household knowledge base — highly sensitive, gitignored even in private repo
+context/user_context/*.md
+context/user_context/features.yaml
+context/*.md
+context/users.yaml
+context/archive/*.md
+context/events/*/
+
+# nanobot runtime memory — session context, not source of truth
+MEMORY.md
+HISTORY.md
+HEARTBEAT.md
+!agent/HEARTBEAT.md
+*.nanobot/
+
+# Secrets and credentials — never commit real values
+# Template is committed; everything else in secrets/ is not
+secrets/*
+!secrets/.env.template
+.env
+*.env
+*.pem
+*.key
+*.pickle
+google_oauth.json
+*_tokens.json
+*_tokens.enc
+
+# Drive-synced documents (downloaded from Drive — not committed)
+# .md files (design docs) are committed; everything else in docs/ is not
+docs/*
+!docs/*.md
+!docs/features/
+docs/features/*
+!docs/features/*.md
+# Internal audit / planning notes that document tenant or capability state.
+# Stay out of the agent's loadable context — the agent should derive what's
+# enabled from config/capabilities.yaml at runtime, not from a frozen audit.
+docs/new_household_ux_audit.md
+
+# Logs and audit trail
+logs/
+*.log
+audit.db
+scopes.db
+data/*
+!data/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Node / Playwright (portal E2E tests)
+node_modules/
+test-results/
+playwright-report/
+blob-report/
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+context/.nanobot_workspace/AGENTS.md
+context/.nanobot_workspace/SOUL.md
+context/.nanobot_workspace/TOOLS.md
+context/.nanobot_workspace/USER.md
+context/.nanobot_workspace/sessions/cli_direct.jsonl
+context/.nanobot_workspace/sessions/telegram_*.jsonl
+context/.nanobot_workspace/calendar_last_briefing.txt
+context/.nanobot_workspace/drive_last_sync.txt
+context/.nanobot_workspace/drive_index.json
+context/drive_cache/
+context/.nanobot_workspace/gmail_last_checked.txt
+context/.nanobot_workspace/sessions/*
+context/.nanobot_workspace/CURRENT_MODEL
+context/.nanobot_workspace/*
+context/property.md
+vps/*
+context/payee_labels.json
+data/budget_alert_state.json
+context/.guest_workspace/*
+portal/frontend/.vite/*
+tests/sim_workspace*
+
+# Simulation run artifacts — transcripts and AGENTS.md snapshots leak
+# real names + absolute paths every time a sim runs. Live in homer-portal
+# (private) instead; harness honors $HOMER_SIM_RUNS_DIR for that.
+tests/simulation/runs/
+context/scopes.db-*
+context/events/guest_agent_acl.json

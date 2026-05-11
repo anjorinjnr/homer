@@ -1,0 +1,67 @@
+name: "RSVP Webpage — Public Shareable Link"
+event_id: "sim_rsvp_public"
+event_name: "Summer BBQ"
+model: "gemini/gemini-3-pro-preview"
+
+setup:
+  - tool: event_manage
+    args: ["--create", "--name", "Summer BBQ", "--event-id", "sim_rsvp_public"]
+
+  - tool: event_manage
+    args: ["--update", "--event-id", "sim_rsvp_public", "--field", "dates", "--value", "Saturday, August 2, 2026 — 4:00 PM"]
+
+  - tool: event_manage
+    args: ["--update", "--event-id", "sim_rsvp_public", "--field", "Location", "--value", "42 Maple Ridge Dr, Anytown ST"]
+
+beats:
+  # --- Beat 1: Owner asks for a shareable RSVP link (no guests pre-enrolled) ---
+
+  - actor: alex
+    message: >
+      I'm throwing a summer BBQ on August 2nd. I need an RSVP page I can
+      share with everyone — don't need to add individual guests. Ask people
+      about dietary restrictions (None, Vegetarian, Vegan, Gluten-free) and
+      whether they're bringing a dish to share. Deadline is July 25.
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "set-rsvp-fields"
+          note: "Should configure the form fields"
+        - pattern: "rsvp_invite\\.py.*--public"
+          note: "Should generate a public shareable link"
+      keywords: ["rsvp"]
+      max_tool_calls: 8
+    note: >
+      Homer should: (1) set up RSVP fields with dietary + bringing_dish,
+      (2) set the deadline to July 25, (3) set a description,
+      (4) generate a public link with rsvp_invite.py --public.
+      Should NOT try to add guests first — the owner explicitly said
+      "don't need to add individual guests."
+
+  # --- Beat 2: Owner asks for the RSVP status later ---
+
+  - actor: alex
+    message: "How many people have RSVP'd to the BBQ so far?"
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "rsvp-summary|--guests|--status"
+          note: "Should check RSVP data"
+      max_tool_calls: 2
+    note: >
+      Homer should check the event status / RSVP summary and report
+      that no one has responded yet (the link was just created).
+
+  # --- Beat 3: Owner asks to update the event details ---
+
+  - actor: alex
+    message: >
+      Actually change the time to 3:00 PM and add a note that
+      we'll have a bounce house for the kids.
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "event_manage"
+          note: "Should update the event"
+      max_tool_calls: 4
+    note: "Homer updates dates and adds a note (--update + --add-note)."

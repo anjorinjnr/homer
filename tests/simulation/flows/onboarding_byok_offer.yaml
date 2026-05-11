@@ -1,0 +1,65 @@
+name: "Onboarding — BYOK Offer (workspace + context done, default-tier model)"
+event_id: "sim_onboarding_byok_offer"
+event_name: "Onboarding BYOK Offer"
+model: "gemini/gemini-3-pro-preview"
+
+# Workspace and context are already done; only BYOK is missing. The model
+# tier is detected from env (OPENROUTER_API_KEY only → default-tier). Homer's
+# next eligible turn should append the BYOK push exactly once.
+setup:
+  - tool: onboarding
+    args: ["reset", "--empty-household"]
+  - tool: onboarding
+    args: ["answer", "--field-key", "primary_user.name", "--value", "Ada", "--source", "imported"]
+  - tool: onboarding
+    args: ["answer", "--field-key", "primary_user.role", "--value", "product designer", "--source", "imported"]
+  - tool: onboarding
+    args: ["answer", "--field-key", "home.address", "--value", "Austin, TX", "--source", "imported"]
+  - tool: onboarding
+    args: ["answer", "--field-key", "partner", "--value", "- Chike (partner)", "--source", "imported"]
+  - tool: onboarding
+    args: ["answer", "--field-key", "children", "--value", "- Zora (age 7)", "--source", "imported"]
+  - tool: onboarding
+    args: ["setup-mark", "--item", "workspace", "--status", "done"]
+  - tool: onboarding
+    args: ["setup-mark", "--item", "context_import", "--status", "done"]
+
+beats:
+  # --- Beat 1: Any user message. Homer answers + appends the BYOK push once.
+  - actor: alex
+    message: >
+      what's the weather looking like today?
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "onboarding\\.py.*status"
+          note: "Skill checks status; next_setup should be 'byok'"
+        - pattern: "onboarding\\.py.*setup-mark.*byok.*asked"
+          note: "Skill marks byok as asked so the 24h cooldown engages"
+      keywords:
+        - "default"
+        - "settings/ai-provider"
+      no_keywords:
+        - "Google"        # workspace is already done — no workspace push
+        - "any kids"      # context is already done — no context push
+      max_tool_calls: 12
+    note: >
+      Homer should answer the weather question and append a single BYOK push
+      that mentions the default model and points at /settings/ai-provider.
+
+  # --- Beat 2: User declines BYOK. next_setup goes null; no further pushes.
+  - actor: alex
+    message: >
+      I'm fine on the default — don't bug me about API keys
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "onboarding\\.py.*setup-mark.*byok.*declined"
+          note: "User declined BYOK; mark it so we stop pushing"
+      no_keywords:
+        - "settings/ai-provider"
+        - "default model"
+      max_tool_calls: 6
+    note: >
+      Homer should mark byok declined and acknowledge briefly. Should not
+      re-push BYOK.

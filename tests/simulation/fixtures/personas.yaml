@@ -1,0 +1,102 @@
+actors:
+  alex:
+    role: primary
+    name: "Alex"
+    phone: "+14125550001"
+    jid: "14125550001@s.whatsapp.net"
+    channel: "whatsapp"
+    style: "Direct, organized. Planning the trip."
+
+  emeka:
+    role: guest
+    name: "Emeka"
+    phone: "+14125550002"
+    jid: "14125550002@s.whatsapp.net"
+    channel: "whatsapp"
+    style: >
+      Busy professional, not a big rider but interested in the social side.
+      Wants a night out. Casual tone, sometimes sends short messages.
+
+  wale:
+    role: guest
+    name: "Wale"
+    phone: "+14125550003"
+    jid: "14125550003@s.whatsapp.net"
+    channel: "whatsapp"
+    style: >
+      Busy, rides indoors (Peloton). Curious about logistics and cost.
+      Wants to know what he's getting into before committing.
+
+  sam:
+    role: guest
+    name: "Sam"
+    phone: "+14125550004"
+    jid: "14125550004@s.whatsapp.net"
+    channel: "whatsapp"
+    style: >
+      Alex's partner. Casual, helpful, has opinions on plans.
+      Responds quickly with concise answers.
+
+  seun_home:
+    role: primary
+    name: "Sam"
+    phone: "+14125550004"
+    jid: "14125550004@s.whatsapp.net"
+    channel: "whatsapp"
+    style: >
+      Alex's partner. Household member talking directly to Homer.
+      Casual, helpful, concise.
+
+  emeka_lid:
+    role: guest
+    name: "Emeka"
+    phone: "+14125550002"
+    jid: "914125550002@lid"
+    channel: "whatsapp"
+    style: >
+      Same as emeka but arriving via WhatsApp LID (opaque identifier).
+      Busy professional, casual tone.
+
+  ugo:
+    role: guest
+    name: "Ugo"
+    phone: "+14125550005"
+    jid: "14125550005@s.whatsapp.net"
+    channel: "whatsapp"
+    style: >
+      Outdoorsy but practical. Prefers drivable trips.
+      Direct communicator, doesn't beat around the bush.
+
+  wale_lid:
+    role: guest
+    name: "Wale"
+    phone: "+14125550003"
+    jid: "914125550003@lid"
+    channel: "whatsapp"
+    style: >
+      Same as wale but arriving via WhatsApp LID (opaque identifier).
+      Curious about logistics and cost.
+
+  bob_painter:
+    role: guest
+    name: "Bob"
+    phone: "+14125550006"
+    jid: "14125550006@s.whatsapp.net"
+    channel: "whatsapp"
+    style: >
+      Local house painter. Professional but casual. Responds with
+      practical details — availability, pricing, materials. Short messages.
+
+  grandma_helen:
+    role: guest
+    name: "Helen"
+    phone: "+14125550010"
+    jid: "14125550010@s.whatsapp.net"
+    channel: "whatsapp"
+    style: >
+      88-year-old contributor sharing family history with the guest
+      historian. Warm, sometimes meandering. Memories surface unevenly —
+      mixes specific details (names, places, years) with vague phrasing
+      ("a long time ago", "back home"). Sends a mix of long story-rich
+      messages and short conversational ones ("thanks", "good morning").
+      Occasionally forwards or quotes an earlier message verbatim.

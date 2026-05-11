@@ -1,0 +1,128 @@
+name: "Home Maintenance — Seasonal Checkup & Project Tracking"
+event_id: "sim_maintenance"
+event_name: "Home Maintenance Simulation"
+model: "gemini/gemini-3-pro-preview"
+
+# Seed with realistic recurring tasks, providers, and appliances.
+setup:
+  # Recurring maintenance tasks
+  - tool: maintenance
+    args: ["--add-task", "--name", "Replace HVAC filter", "--system", "HVAC", "--frequency", "90", "--notes", "20x25x1 Filtrete"]
+  - tool: maintenance
+    args: ["--add-task", "--name", "Pool opening", "--system", "Pool", "--frequency", "365", "--notes", "April each year"]
+  - tool: maintenance
+    args: ["--add-task", "--name", "Gutter cleaning", "--system", "Exterior", "--frequency", "180", "--notes", "Spring and fall"]
+  - tool: maintenance
+    args: ["--add-task", "--name", "Lawn fertilization", "--system", "Lawn", "--frequency", "60", "--notes", "Zone 8a schedule"]
+  - tool: maintenance
+    args: ["--add-task", "--name", "Dryer vent cleaning", "--system", "Appliance", "--frequency", "365"]
+  - tool: maintenance
+    args: ["--add-task", "--name", "Pressure wash driveway", "--system", "Exterior", "--frequency", "365", "--notes", "Spring"]
+  - tool: maintenance
+    args: ["--add-task", "--name", "Smoke detector batteries", "--system", "Safety", "--frequency", "180"]
+  - tool: maintenance
+    args: ["--add-task", "--name", "HVAC professional service", "--system", "HVAC", "--frequency", "365", "--notes", "Annual tune-up"]
+
+  # Service providers
+  - tool: maintenance
+    args: ["--add-provider", "--name", "Malcolm Johnson", "--specialty", "HVAC", "--phone", "770-555-0101", "--notes", "Reliable, does annual tune-ups", "--rating", "5"]
+  - tool: maintenance
+    args: ["--add-provider", "--name", "Dave's Plumbing", "--specialty", "Plumbing", "--phone", "770-555-0202", "--notes", "24hr emergency service"]
+  - tool: maintenance
+    args: ["--add-provider", "--name", "Green Thumb Landscaping", "--specialty", "Lawn", "--phone", "770-555-0303", "--rating", "4"]
+
+  # Appliances
+  - tool: maintenance
+    args: ["--add-appliance", "--name", "Refrigerator", "--brand", "Samsung", "--model", "RF28R7351SG", "--install-date", "2023-06-15", "--warranty-until", "2028-06-15", "--location", "Kitchen"]
+  - tool: maintenance
+    args: ["--add-appliance", "--name", "Washer", "--brand", "LG", "--model", "WM4000HBA", "--install-date", "2022-03-01", "--warranty-until", "2025-03-01", "--location", "Laundry Room"]
+  - tool: maintenance
+    args: ["--add-appliance", "--name", "Water Heater", "--brand", "Rheem", "--model", "XE50T10HD50U1", "--install-date", "2021-08-20", "--warranty-until", "2027-08-20", "--location", "Basement"]
+  - tool: maintenance
+    args: ["--add-appliance", "--name", "Dishwasher", "--brand", "Bosch", "--model", "SHPM88Z75N", "--install-date", "2023-06-15", "--warranty-until", "2026-06-15", "--location", "Kitchen"]
+
+beats:
+  # --- Phase 1: Spring check-in ---
+
+  - actor: alex
+    message: >
+      Homer, it's spring — what maintenance is coming up? Give me a dashboard
+      of what's due and any warranties I should be aware of.
+    expect:
+      keywords: ["HVAC", "Pool"]
+      tools_used: ["exec"]
+    note: "Homer should run --dashboard and report overdue/upcoming tasks and expiring warranties"
+
+  # --- Phase 2: Complete a task ---
+
+  - actor: alex
+    message: >
+      I just replaced the HVAC filter this morning. 20x25x1 Filtrete from
+      Home Depot, cost $18. Mark that done.
+    expect:
+      tools_used: ["exec"]
+    note: "Homer should complete the HVAC filter task with cost and notes"
+
+  # --- Phase 3: Vendor lookup ---
+
+  - actor: alex
+    message: >
+      Who's our HVAC guy? I need to schedule the annual tune-up.
+    expect:
+      keywords: ["Malcolm"]
+      tools_used: ["exec"]
+    note: "Homer should look up the HVAC provider and return Malcolm's info"
+
+  # --- Phase 4: Start a home project ---
+
+  - actor: alex
+    message: >
+      We need to replace the fence in the backyard — it's leaning badly after
+      the storms. Start tracking this as a project. Budget is around $5000.
+      Open items: get 3 quotes from fence companies, check HOA rules on
+      fence height, and pick a material (wood vs vinyl).
+    expect:
+      tools_used: ["exec"]
+    note: "Homer should create a project and add open items"
+
+  # --- Phase 5: Check project + update ---
+
+  - actor: alex
+    message: >
+      I checked with the HOA — 6 feet max, any material. Mark that item done.
+      Also I got a quote from Peach State Fencing: $4200 for cedar.
+    expect:
+      tools_used: ["exec"]
+    note: "Homer should check off the HOA item and add a note about the quote"
+
+  # --- Phase 6: Appliance warranty check ---
+
+  - actor: alex
+    message: >
+      Is the washer still under warranty? I think it's been making a weird
+      noise on the spin cycle.
+    expect:
+      keywords: ["LG"]
+      tools_used: ["exec"]
+    note: "Homer should check the washer warranty (expired March 2025) and advise"
+
+  # --- Phase 7: Add a new provider ---
+
+  - actor: alex
+    message: >
+      Add a new vendor — Peach State Fencing, specialty is Fencing, phone
+      678-555-0404. They came out fast and the quote was fair. 4 stars.
+    expect:
+      tools_used: ["exec"]
+    note: "Homer should add the provider to the directory"
+
+  # --- Phase 8: Pool season ---
+
+  - actor: alex
+    message: >
+      Time to open the pool. Can you mark the pool opening task as done?
+      I did it myself last weekend. Also remind me — what's left on the
+      fence project?
+    expect:
+      tools_used: ["exec"]
+    note: "Homer should complete the pool task and show the fence project status"

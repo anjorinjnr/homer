@@ -1,0 +1,125 @@
+name: "Agentic Heartbeat Tasks — Tool-Use During Background Runs"
+event_id: "sim_agentic_heartbeat"
+event_name: "Agentic Heartbeat Task Simulation"
+model: "gemini/gemini-3-pro-preview"
+
+# Seed maintenance data so the agentic task has something to work with.
+setup:
+  - tool: maintenance
+    args: ["--add-task", "--name", "Replace HVAC filter", "--system", "HVAC", "--frequency", "90", "--notes", "20x25x1 Filtrete"]
+  - tool: maintenance
+    args: ["--add-task", "--name", "Pool opening", "--system", "Pool", "--frequency", "365", "--notes", "April each year"]
+  - tool: maintenance
+    args: ["--add-task", "--name", "Gutter cleaning", "--system", "Exterior", "--frequency", "180", "--notes", "Spring and fall"]
+  - tool: maintenance
+    args: ["--add-task", "--name", "Smoke detector batteries", "--system", "Safety", "--frequency", "180"]
+  - tool: maintenance
+    args: ["--add-appliance", "--name", "Water Heater", "--brand", "Rheem", "--model", "XE50T10HD50U1", "--install-date", "2021-08-20", "--warranty-until", "2027-08-20", "--location", "Basement"]
+  - tool: maintenance
+    args: ["--add-appliance", "--name", "Washer", "--brand", "LG", "--model", "WM4000HBA", "--install-date", "2022-03-01", "--warranty-until", "2025-03-01", "--location", "Laundry Room"]
+
+heartbeat_md: |
+  # Heartbeat Tasks
+
+  This file is checked every 30 minutes by your nanobot agent.
+
+  ## CRITICAL: Silent Mode Rules
+
+  You are a background process. You are NOT in a conversation. There is no user waiting for a reply.
+
+  RULE 1 — DO NOT WRITE TEXT. Any text you write gets sent to users as a message. This is a bug.
+  Your response must contain ONLY tool calls (exec or message). Zero words. Zero sentences. Nothing.
+
+  RULE 2 — The ONLY way to communicate with users is the message tool.
+  Only call message when you have real content to deliver (an email alert, the morning briefing, a due reminder).
+
+  RULE 3 — SKIP means stop. If any exec output starts with "SKIP:", tick the task and write nothing else.
+
+  RULE 4 — Empty results mean silence. No emails → tick, no message. No due tasks → no message.
+
+  ## User Tasks
+
+  System tasks (Type: system): run the task's exec per Heartbeat Execution rules in AGENTS.md, then tick.
+  Agentic tasks (Type: agentic): use tools/skills to accomplish the goal, send results to Recipients, then tick. See AGENTS.md for full rules.
+  Reminder tasks (no Type): send message with the task description, then tick.
+
+  ### Home maintenance check
+  Type: agentic
+  Schedule: 2026-01-01 08:00
+  Recur: every 7 days
+  Recipients: primary:whatsapp
+  Goal: Run the maintenance dashboard to check for overdue and upcoming tasks. Summarize what needs attention this week and send it to the user.
+  Added: 2026-01-01
+
+  ## Completed
+
+beats:
+  # --- Beat 1: Heartbeat fires the agentic task ---
+  # Homer should: read the agentic task goal, run maintenance.py --dashboard,
+  # compose a summary, message it to recipients, then tick the task.
+
+  - actor: alex
+    heartbeat: true
+    message: "Home maintenance check (agentic)"
+    expect:
+      tools_used: ["exec"]
+    note: >
+      Homer sees the agentic task "Home maintenance check" is due.
+      It should exec maintenance.py --dashboard (or similar), compose
+      a useful summary of what needs attention, message it to the
+      recipient, then tick the task. We check for exec (tool use)
+      as the core signal that agentic execution happened.
+
+  # --- Beat 2: User asks Homer to create a new agentic task ---
+  # This tests the conversational flow for creating agentic tasks.
+
+  - actor: alex
+    new_session: true
+    message: >
+      Hey Homer — every Monday morning at 8am, I want you to check the
+      maintenance dashboard and send me a summary of what's due or overdue
+      that week. Don't just remind me, actually run the check and send
+      the results.
+    expect:
+      tools_used: ["exec"]
+      keywords: ["maintenance", "Monday"]
+    note: >
+      Homer should recognize this needs an agentic task (not a reminder)
+      and call tasks_update.py --add --type agentic with an appropriate
+      description and goal. Should confirm the task was created.
+
+  # --- Beat 3: User asks to see their current tasks ---
+
+  - actor: alex
+    message: >
+      What tasks do I have set up right now? Show me the list.
+    expect:
+      tools_used: ["exec"]
+      keywords: ["maintenance"]
+    note: >
+      Homer should run tasks_update.py --list and show the tasks,
+      including the agentic maintenance task.
+
+  # --- Beat 4: User asks to create another agentic task with a goal ---
+
+  - actor: alex
+    message: >
+      Also set up a task — every Friday at 5pm, check if any appliance
+      warranties are expiring in the next 90 days and let me know. Make
+      sure you actually check the warranty dates, don't just remind me.
+    expect:
+      tools_used: ["exec"]
+      keywords: ["warrant", "Friday"]
+    note: >
+      Homer should create another agentic task with --type agentic
+      and a goal about checking warranty expiration dates.
+
+  # --- Beat 5: User edits an agentic task ---
+
+  - actor: alex
+    message: >
+      Actually change the warranty check to biweekly instead of weekly.
+    expect:
+      tools_used: ["exec"]
+    note: >
+      Homer should call tasks_update.py --edit to change the recurrence.

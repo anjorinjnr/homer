@@ -1,0 +1,119 @@
+name: "Search Tool Efficiency — No Help, No Scripts, No Thrashing"
+event_id: "sim_search_tool_efficiency"
+event_name: "Search Tool Efficiency Test"
+model: "gemini/gemini-3-pro-preview"
+
+mock_tools:
+  # Gmail search — catch-all
+  - pattern: "gmail_search\\.py.*--query"
+    response: |
+      [{"id": "msg_vet_001", "thread_id": "thread_vet_001", "subject": "Vaccination Records - Johnson", "from": "front.desk@anytownvet.example", "date": "2026-03-01 10:00 UTC", "body": "Hi Alex, attached are the updated vaccination records for Max. Next visit due September 2026. — Anytown Animal Hospital"}]
+
+  # Gmail send — draft
+  - pattern: "gmail_send\\.py.*draft(?!-)"
+    response: |
+      {"status": "drafted", "draft_id": "r_sim_eff_001", "to": "front.desk@anytownvet.example", "subject": "Appointment Request", "approval_id": "sim-eff-approval-001", "approval_url": "https://example.com/approve/sim-eff-approval-001"}
+
+  # Gmail send — send (internal)
+  - pattern: "gmail_send\\.py.*send(?!-)"
+    response: |
+      {"status": "sent", "message_id": "msg_sent_eff_001", "to": "se.johnson@gmail.com", "subject": "Vet Appointment"}
+
+  # Drive search
+  - pattern: "drive_search\\.py"
+    response: |
+      {"query": "warranty", "count": 1, "files": [{"id": "1AbC_warranty", "name": "HVAC Warranty 2024.pdf", "path": "family_docs/home/HVAC Warranty 2024.pdf", "type": "pdf", "mime_type": "application/pdf", "modified": "2024-06-15T10:00:00Z"}]}
+
+  # Drive read
+  - pattern: "drive_read\\.py"
+    response: |
+      {"id": "1AbC_warranty", "name": "HVAC Warranty 2024.pdf", "content": "HVAC WARRANTY CERTIFICATE\nInstalled: June 2024\nWarranty: 10 years parts, 5 years labor\nSystem: Carrier Infinity 24ANB1\nContractor: Cool Air Solutions, 555-COOL-AIR\nExpires: June 2034 (parts), June 2029 (labor)"}
+
+  # Web search (should not be used)
+  - pattern: "web_search"
+    response: |
+      [{"title": "Generic result", "url": "https://example.com", "snippet": "Not useful."}]
+
+  # run_code (should not be used for search)
+  - pattern: "run_code\\.py"
+    response: |
+      {"stdout": "No results", "stderr": "", "exit_code": 0}
+
+beats:
+  # --- Beat 1: Email external contact — test tool call efficiency ---
+  # Production loss: Homer used 7+ tool calls (web_search x3, gmail_search --help,
+  # gmail_search with wrong args, gmail_search correct, web_search again).
+  # Should be: gmail_search (1 call) → gmail_send draft (1 call) = 2 core calls.
+
+  - actor: alex
+    message: >
+      Email the vet about scheduling Max's next checkup
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "gmail_search\\.py.*--query"
+          note: "Should search Gmail with --query flag on first try"
+        - pattern: "gmail_send.py.*draft"
+          note: "Then draft the email"
+      no_keywords: ["web_search", "run_code", "--help"]
+      max_tool_calls: 8
+    note: >
+      Tests 3 anti-patterns at once: (1) no web_search for email address,
+      (2) no --help calls mid-flow, (3) correct --query arg syntax.
+      Production showed Homer calling --help and using wrong arg format.
+      Allows extra calls for skill doc reads (read_file/grep) before exec.
+
+  # --- Beat 2: Lookup from Drive — no script writing ---
+  # Production loss: Homer wrote Python via run_code.py to search files
+  # instead of using drive_search.py.
+
+  - actor: alex
+    message: >
+      Is our HVAC still under warranty?
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "drive_search\\.py"
+          note: "Should use drive_search.py for warranty document"
+      no_keywords: ["run_code", "web_search"]
+      max_tool_calls: 8
+    note: >
+      Production loss pattern: Homer wrote Python scripts via run_code.py
+      to search for information instead of using drive_search.py.
+      Warranty info is in Drive — search and read the document.
+      Extra calls allowed for cross-referencing property context.
+
+  # --- Beat 3: Internal email — no unnecessary search ---
+  # Homer should already know household member emails from USER.md.
+
+  - actor: alex
+    message: >
+      Send Sam an email about the vet appointment for Max
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "gmail_send\\.py.*(send|draft)"
+          note: "Should send/draft directly — Sam's email is in context"
+      no_keywords: ["gmail_search", "web_search", "run_code"]
+      max_tool_calls: 4
+    note: >
+      Sam is a household member — her email (se.johnson@gmail.com) is in
+      USER.md. Homer should NOT search Gmail or web for her email address.
+      Should send directly (internal) or draft.
+
+  # --- Beat 4: Multi-step lookup — right tool chain, no detours ---
+  # Tests that Homer chains tools correctly without reading --help.
+
+  - actor: alex
+    message: >
+      Can you find the HVAC contractor's number from our warranty docs
+      and email them about scheduling annual maintenance?
+    expect:
+      no_keywords: ["web_search", "run_code", "--help"]
+      keywords: ["555-COOL-AIR"]
+      max_tool_calls: 8
+    note: >
+      Homer should find contractor info from the warranty doc (may reuse
+      cached content from beat 2) and report the phone number. Should ask
+      user for email since it's not in Gmail or the doc. Should NOT web
+      search for "Cool Air Solutions email".

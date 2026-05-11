@@ -1,0 +1,126 @@
+name: "Search Tool Selection — Right Tool on First Try"
+event_id: "sim_search_tool_selection"
+event_name: "Search Tool Selection Test"
+model: "gemini/gemini-3-pro-preview"
+
+mock_tools:
+  # Gmail search — water company
+  - pattern: "(?i)gmail_search\\.py.*water"
+    response: |
+      [{"id": "msg_water_001", "thread_id": "thread_water_001", "subject": "Your Water Bill Statement", "from": "water@anytown-water.example", "date": "2026-04-10 14:30 UTC", "body": "Your water bill for 42 Maple Ridge Dr, Anytown ST 12345 is $47.82. Due date: April 25, 2026."}]
+
+  # Gmail search — dentist
+  - pattern: "(?i)gmail_search\\.py.*dentist"
+    response: |
+      [{"id": "msg_dentist_001", "thread_id": "thread_dentist_001", "subject": "Appointment Confirmation - Johnson Family", "from": "office@anytown-smiles.example", "date": "2026-04-01 14:00 UTC", "body": "This confirms your appointment for Kemi Johnson on April 15 at 2:30 PM. Please arrive 10 minutes early. - Anytown Smiles Dental"}]
+
+  # Gmail search — plumber
+  - pattern: "(?i)gmail_search\\.py.*plumb"
+    response: |
+      [{"id": "msg_plumber_001", "thread_id": "thread_plumber_001", "subject": "Re: Kitchen faucet repair", "from": "mike@reliableplumbing.com", "date": "2026-03-20 09:15 UTC", "body": "Hi Alex, I can come by Thursday afternoon to look at the faucet. $85 service call fee. - Mike, Reliable Plumbing"}]
+
+  # Gmail send — draft
+  - pattern: "gmail_send\\.py.*draft(?!-)"
+    response: |
+      {"status": "drafted", "draft_id": "r_sim_draft_001", "to": "water@anytown-water.example", "subject": "Autopay Confirmation", "approval_id": "sim-approval-001", "approval_url": "https://example.com/approve/sim-approval-001"}
+
+  # Drive search — insurance
+  - pattern: "(?i)drive_search\\.py.*insurance"
+    response: |
+      {"query": "insurance", "count": 2, "files": [{"id": "1AbC_ins_auto", "name": "Auto Insurance Policy 2026.pdf", "path": "family_docs/insurance/Auto Insurance Policy 2026.pdf", "type": "pdf", "mime_type": "application/pdf", "modified": "2026-02-15T10:00:00Z"}, {"id": "1AbC_ins_home", "name": "Homeowners Policy 2026.pdf", "path": "family_docs/insurance/Homeowners Policy 2026.pdf", "type": "pdf", "mime_type": "application/pdf", "modified": "2026-01-20T10:00:00Z"}]}
+
+  # Drive read
+  - pattern: "drive_read\\.py"
+    response: |
+      {"id": "1AbC_ins_auto", "name": "Auto Insurance Policy 2026.pdf", "content": "STATE FARM AUTO POLICY #AF-9912834\nPolicyholder: Alex Johnson\nVehicles: 2023 Toyota RAV4, 2021 Honda Civic\nCoverage: Comprehensive + Collision\nDeductible: $500\nPremium: $142/month\nRenewal: May 1, 2026\nAgent: Sarah Chen, 555-888-1234"}
+
+  # Web search — should NOT be used in beats 1-4
+  - pattern: "web_search"
+    response: |
+      [{"title": "Generic search result", "url": "https://example.com", "snippet": "No useful information found."}]
+
+beats:
+  # --- Beat 1: Email a company from prior correspondence ---
+  # Real user phrasing from production session. Homer historically web-searched
+  # for "<city> Water System email address" instead of gmail_search.
+
+  - actor: alex
+    message: >
+      Email the local water company that the bill is on autopay
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "gmail_search"
+          note: "Must search Gmail first to find the water company's email"
+        - pattern: "gmail_send.py.*draft"
+          note: "Then draft the email"
+      no_keywords: ["web_search"]
+      max_tool_calls: 6
+    note: >
+      Production loss pattern: Homer used web_search 3x to find water@anytown-water.example
+      instead of gmail_search. The address is in prior correspondence.
+
+  # --- Beat 2: Email a service provider from prior correspondence ---
+  # Variant: person name instead of company name.
+
+  - actor: alex
+    message: >
+      Can you email the plumber who fixed our kitchen faucet last month?
+      Ask him if he can come back to check the upstairs bathroom too.
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "gmail_search"
+          note: "Should search Gmail for plumber correspondence"
+        - pattern: "gmail_send.py.*draft"
+          note: "Should draft the email"
+      no_keywords: ["web_search"]
+      max_tool_calls: 6
+    note: >
+      Homer should find mike@reliableplumbing.com via gmail_search,
+      not web search for "plumber email Anytown ST".
+
+  # --- Beat 3: Find info from a Drive document ---
+  # Tests Drive-first priority for policy/contract questions.
+
+  - actor: alex
+    message: >
+      What's the deductible on our auto insurance policy?
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "drive_search\\.py.*insurance"
+          note: "Should search Drive for the insurance document"
+      no_keywords: ["web_search"]
+      max_tool_calls: 6
+    note: >
+      Policy details live in Drive documents. Homer should search Drive
+      and read the document, not web search or search Gmail.
+
+  # --- Beat 4: Answer from loaded context ---
+  # Household member info is in USER.md — no tool call needed.
+
+  - actor: alex
+    message: >
+      What's Sam's email address?
+    expect:
+      no_keywords: ["web_search", "gmail_search", "drive_search"]
+      max_tool_calls: 2
+    note: >
+      se.johnson@gmail.com is in USER.md (always loaded). Homer should
+      answer directly — no search tool needed.
+
+  # --- Beat 5: Find appointment info from email ---
+
+  - actor: alex
+    message: >
+      When is Kemi's dentist appointment? I think we got a confirmation email.
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "gmail_search\\.py.*dentist"
+          note: "Should search Gmail for the appointment email"
+      no_keywords: ["web_search"]
+      max_tool_calls: 5
+    note: >
+      User mentioned email. Homer should gmail_search, not web search.

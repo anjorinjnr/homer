@@ -1,0 +1,79 @@
+name: "Guest RSVP Handling — Decline, Confirm, Maybe"
+event_id: "sim_guest_rsvp"
+event_name: "Weekend Camping Trip"
+model: "gemini/gemini-3-pro-preview"
+
+setup:
+  - tool: event_manage
+    args: ["--create", "--name", "Weekend Camping Trip", "--event-id", "sim_guest_rsvp"]
+
+  - tool: event_manage
+    args: ["--update", "--event-id", "sim_guest_rsvp", "--field", "dates", "--value", "2026-05-22 to 2026-05-24"]
+
+  - tool: event_manage
+    args: ["--update", "--event-id", "sim_guest_rsvp", "--field", "Location", "--value", "Red Top Mountain State Park, GA"]
+
+  - tool: manage_event_guest
+    args: ["--add", "--event-id", "sim_guest_rsvp", "--name", "Ugo", "--phone", "+14125550005"]
+
+  - tool: manage_event_guest
+    args: ["--add", "--event-id", "sim_guest_rsvp", "--name", "Emeka", "--phone", "+14125550002"]
+
+  - tool: manage_event_guest
+    args: ["--add", "--event-id", "sim_guest_rsvp", "--name", "Wale", "--phone", "+14125550003"]
+
+beats:
+  # --- Beat 1: Primary confirms setup ---
+
+  - actor: alex
+    message: >
+      I just created the Weekend Camping Trip to Red Top Mountain for May 22-24.
+      I added Ugo, Emeka, and Wale. Can you confirm the event looks right?
+    expect:
+      keywords: ["Red Top Mountain", "May"]
+    note: "Primary verifies event was set up correctly"
+
+  # --- Beat 2: Ugo declines ---
+
+  - actor: ugo
+    message: >
+      Hey, thanks for the invite but I'm going to have to pass on this one.
+      The drive is too far for a weekend. I'd be down for something closer
+      to Atlanta though — maybe a drivable day trip next time?
+    expect:
+      no_keywords: ["escalate", "scope", "trigger", "Internal Actions", "Note to"]
+      rsvp:
+        guest: "Ugo"
+        status: "declined"
+      escalation: true
+      tools_used: ["exec"]
+    note: "Guest declines — RSVP should be recorded, escalation fired to notify primary"
+
+  # --- Beat 3: Emeka confirms ---
+
+  - actor: emeka
+    message: "Yo I'm in! Red Top Mountain sounds fun. Count me in for sure."
+    expect:
+      rsvp:
+        guest: "Emeka"
+        status: "confirmed"
+      escalation: true
+    note: "Guest confirms attendance — RSVP recorded, escalation to primary"
+
+  # --- Beat 4: Primary asks about Ugo ---
+
+  - actor: alex
+    message: "Hey did you hear back from Ugo about the camping trip?"
+    expect:
+      keywords: ["Ugo"]
+    note: "Primary should learn that Ugo declined"
+
+  # --- Beat 5: Wale is tentative ---
+
+  - actor: wale
+    message: "Maybe — I need to check if I have that weekend free. Let me get back to you."
+    expect:
+      rsvp:
+        guest: "Wale"
+        status: "maybe"
+    note: "Guest is tentative — RSVP recorded as maybe"

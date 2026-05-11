@@ -1,0 +1,93 @@
+name: "Interaction Scopes — Create Before External Contact"
+event_id: "sim_interaction_scope"
+event_name: "Interaction Scope Test"
+model: "gemini/gemini-3-pro-preview"
+
+mock_tools:
+  # Mock gmail_search — match any search query
+  - pattern: "gmail_search\\.py"
+    response: |
+      [{"id": "msg_painter_001", "thread_id": "thread_painter_001", "subject": "Re: Exterior painting estimate", "from": "bob@starpainters.com", "date": "2026-03-15 10:00 UTC", "body": "Hi, I can come by Saturday to give you a quote. Bob - Star Painters"}]
+
+  # Mock gmail_send draft
+  - pattern: "gmail_send\\.py.*draft(?!-)"
+    response: |
+      {"status": "drafted", "draft_id": "r_sim_int_001", "to": "bob@starpainters.com", "subject": "Follow-up on painting estimate", "approval_id": "sim-int-approval-001", "approval_url": "https://example.com/approve/sim-int-approval-001"}
+
+  # Mock gmail_send send (for internal emails)
+  - pattern: "gmail_send\\.py.*send "
+    response: |
+      {"status": "sent", "message_id": "msg_sent_int_001", "to": "se.johnson@gmail.com", "subject": "Dentist Appointment Reminder"}
+
+  # Mock manage_interaction --list
+  - pattern: "manage_interaction\\.py.*--list"
+    response: |
+      [{"scope_id": "int_mike_the_plumber", "name": "Mike the Plumber", "channel": "whatsapp", "contact": "15559876543@s.whatsapp.net", "purpose": "Water heater replacement quote", "expires": "2026-05-16"}]
+
+  # Mock manage_interaction --create
+  - pattern: "manage_interaction\\.py.*--create"
+    response: |
+      {"status": "created", "scope_id": "int_contact", "name": "Contact", "channel": "whatsapp", "contact": "15551234567@s.whatsapp.net", "expires": "2026-05-16", "scope_created": true, "service_restarted": true}
+
+beats:
+  # --- Beat 1: User asks Homer to email an external vendor ---
+  # Homer should create an interaction scope BEFORE drafting the email.
+
+  - actor: alex
+    message: >
+      Email Bob at Star Painters to follow up on the exterior painting estimate
+      he gave us last month. Ask if the quote is still valid and when he could start.
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "manage_interaction\\.py.*--create"
+          note: "Should create interaction scope before sending email"
+        - pattern: "gmail_send\\.py.*draft"
+          note: "Then draft the email"
+      max_tool_calls: 12
+    note: >
+      Homer should: (1) search Gmail to find Bob's email, (2) create an
+      interaction scope via manage_interaction.py --create, (3) draft the
+      email. The scope ensures Bob's replies route to the guest agent.
+
+  # --- Beat 2: User asks Homer to text an external contact on WhatsApp ---
+  # Homer should create an interaction scope before messaging.
+
+  - actor: alex
+    message: >
+      Text Mike the plumber on WhatsApp at +1-555-987-6543 and remind him
+      to send the quote for the water heater replacement we discussed.
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "manage_interaction\\.py.*--create.*--phone"
+          note: "Should create interaction scope with phone number"
+      max_tool_calls: 8
+    note: >
+      Homer should create an interaction scope for Mike (WhatsApp channel)
+      before sending the message. The scope ensures Mike's replies route
+      to the guest agent.
+
+  # --- Beat 3: User asks Homer to list active interactions ---
+
+  - actor: alex
+    message: >
+      What interaction scopes do we have active right now?
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "manage_interaction\\.py.*--list"
+          note: "Should list interactions"
+    note: >
+      Homer should call manage_interaction.py --list and present the results.
+
+  # --- Beat 4: User asks to email someone internal — no scope needed ---
+
+  - actor: alex
+    message: >
+      Send Sam an email reminding her about the dentist appointment tomorrow.
+    expect:
+      no_keywords: ["manage_interaction", "interaction scope"]
+    note: >
+      Sam is a household member (internal). Homer should NOT create an
+      interaction scope — just send the email directly.

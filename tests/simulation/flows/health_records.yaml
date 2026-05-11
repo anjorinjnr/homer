@@ -1,0 +1,119 @@
+name: "Health Records — Kemi's Checkup & Family Dashboard"
+event_id: "sim_health"
+event_name: "Health Records Simulation"
+model: "gemini/gemini-3-pro-preview"
+
+# Seed with family member profiles and medical history.
+setup:
+  # Family members
+  - tool: health_records
+    args: ["--add-member", "--name", "Alex", "--dob", "1987-03-15", "--blood-type", "O+", "--doctor", "Dr. Patel", "--insurance", "Aetna PPO", "--allergies", "none"]
+  - tool: health_records
+    args: ["--add-member", "--name", "Sam", "--dob", "1989-06-22", "--blood-type", "A+", "--doctor", "Dr. Okafor", "--insurance", "Aetna PPO", "--allergies", "penicillin"]
+  - tool: health_records
+    args: ["--add-member", "--name", "Kemi", "--dob", "2021-07-12", "--blood-type", "O+", "--doctor", "Dr. Chen", "--insurance", "Aetna PPO", "--allergies", "none", "--notes", "Pediatrician at Anytown Pediatrics"]
+
+  # Kemi's vaccination history
+  - tool: health_records
+    args: ["--log-vaccine", "--member", "Kemi", "--vaccine", "DTaP (dose 4)", "--date", "2025-07-12", "--provider", "Dr. Chen"]
+  - tool: health_records
+    args: ["--log-vaccine", "--member", "Kemi", "--vaccine", "Flu 2025", "--date", "2025-10-05", "--provider", "CVS", "--next-due", "2026-10-01"]
+  - tool: health_records
+    args: ["--log-vaccine", "--member", "Kemi", "--vaccine", "MMR (dose 2)", "--date", "2025-07-12", "--provider", "Dr. Chen"]
+  - tool: health_records
+    args: ["--log-vaccine", "--member", "Kemi", "--vaccine", "IPV (dose 4)", "--date", "2025-07-12", "--provider", "Dr. Chen"]
+
+  # Past visits
+  - tool: health_records
+    args: ["--log-visit", "--member", "Kemi", "--date", "2025-07-12", "--provider", "Dr. Chen", "--type", "checkup", "--notes", "4-year well-child visit, all milestones met", "--follow-up", "2026-07-12"]
+  - tool: health_records
+    args: ["--log-visit", "--member", "Kemi", "--date", "2026-01-15", "--provider", "Dr. Chen", "--type", "sick", "--diagnosis", "ear infection", "--treatment", "Amoxicillin 10 days"]
+  - tool: health_records
+    args: ["--log-visit", "--member", "Alex", "--date", "2026-02-01", "--provider", "Dr. Patel", "--type", "checkup", "--notes", "Annual physical, all good"]
+
+  # Sam's medication
+  - tool: health_records
+    args: ["--add-medication", "--member", "Sam", "--name", "Zyrtec", "--dosage", "10mg", "--frequency", "daily", "--prescriber", "Dr. Okafor", "--pharmacy", "CVS Anytown", "--refill-date", "2026-04-10"]
+
+beats:
+  # --- Phase 1: Family health dashboard ---
+
+  - actor: alex
+    message: >
+      Homer, give me the family health dashboard. Who has upcoming
+      appointments or things due?
+    expect:
+      keywords: ["Kemi"]
+      tools_used: ["exec"]
+    note: "Homer should run --dashboard and report Kemi's well-child follow-up, Sam's refill, flu shot due date"
+
+  # --- Phase 2: Log a new visit ---
+
+  - actor: alex
+    message: >
+      Kemi had her dentist appointment today at Anytown Pediatric Dentistry.
+      Everything looked good, no cavities. Next visit in 6 months.
+    expect:
+      tools_used: ["exec"]
+    note: "Homer should log the dental visit with follow-up date 6 months out"
+
+  # --- Phase 3: Vaccination check ---
+
+  - actor: alex
+    message: >
+      Is Kemi up to date on her vaccinations? What's coming up next?
+    expect:
+      keywords: ["Flu"]
+      tools_used: ["exec"]
+    note: "Homer should list vaccines given and flag the flu shot due in October 2026"
+
+  # --- Phase 4: Symptom logging ---
+
+  - actor: alex
+    message: >
+      Kemi's been coughing since yesterday and had a low fever this morning —
+      100.4. She's also been a little fussy. Log that please.
+    expect:
+      tools_used: ["exec"]
+    note: "Homer should log symptoms with temperature"
+
+  - actor: alex
+    message: >
+      Day 2 — cough is still there but fever is down to 99.8. She ate well
+      though. Log this too.
+    expect:
+      tools_used: ["exec"]
+    note: "Homer should log updated symptoms"
+
+  # --- Phase 5: Review symptom history ---
+
+  - actor: alex
+    message: >
+      Show me Kemi's recent symptoms. She also had that ear infection in
+      January — is this turning into a pattern? Should I call Dr. Chen?
+    expect:
+      keywords: ["cough"]
+      tools_used: ["exec"]
+    note: "Homer should pull symptom history and visit history, noting the ear infection and recent symptoms"
+
+  # --- Phase 6: Medication management ---
+
+  - actor: alex
+    message: >
+      Sam's Zyrtec refill is coming up. When is it due? Also she wants to
+      switch pharmacies to Publix — update that.
+    expect:
+      keywords: ["April"]
+      tools_used: ["exec"]
+    note: "Homer should show the refill date and update the pharmacy"
+
+  # --- Phase 7: Get member profile ---
+
+  - actor: alex
+    message: >
+      Pull up Kemi's full medical profile — I need it for the camp
+      registration forms.
+    expect:
+      keywords: ["Dr. Chen", "O+"]
+      tools_used: ["exec"]
+    note: "Homer should return Kemi's complete profile with DOB, blood type, allergies, doctor, recent visits"

@@ -1,0 +1,97 @@
+name: "Email Send — Draft, Approve, Reply"
+event_id: "sim_email_send"
+event_name: "Email Send Test"
+model: "gemini/gemini-3-pro-preview"
+
+mock_tools:
+  - pattern: "gmail_search\\.py.*Water"
+    response: |
+      [{"id": "msg_water_001", "thread_id": "thread_water_001", "subject": "Your Water Bill Statement", "from": "water@anytown-water.example", "date": "2026-04-10 14:30 UTC", "body": "Your water bill for 42 Maple Ridge Dr, Anytown ST 12345 is $47.82. Due date: April 25, 2026."}]
+
+  - pattern: "gmail_send\\.py.*draft(?!-)"
+    response: |
+      {"status": "drafted", "draft_id": "r_sim_draft_001", "to": "water@anytown-water.example", "subject": "Autopay Confirmation", "approval_id": "sim-approval-001", "approval_url": "https://example.com/approve/sim-approval-001"}
+
+  - pattern: "gmail_send\\.py.*draft-delete"
+    response: |
+      {"status": "deleted", "draft_id": "r_sim_draft_001"}
+
+  - pattern: "gmail_send\\.py.*draft-send"
+    response: |
+      {"status": "draft_sent", "draft_id": "r_sim_draft_001", "message_id": "msg_sent_001"}
+
+  - pattern: "gmail_send\\.py.*send "
+    response: |
+      {"status": "sent", "message_id": "msg_sent_002", "to": "se.johnson@gmail.com", "subject": "Water Bill Update"}
+
+beats:
+  # --- Beat 1: User asks to email an external contact from prior correspondence ---
+
+  - actor: alex
+    message: >
+      Email the local Water System that our bill is on autopay
+      and ask them to confirm.
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "gmail_search"
+          note: "Should search Gmail first to find the sender's email"
+        - pattern: "gmail_send.py.*draft"
+          note: "Should create a draft (external recipient requires approval)"
+      keywords: ["draft", "approve"]
+      no_keywords: ["web_search", "run_code"]
+      max_tool_calls: 5
+    note: >
+      Homer should: (1) search Gmail for prior correspondence to find the email address,
+      (2) draft the email using gmail_send.py draft with --account primary,
+      (3) present the draft preview + approval URL.
+      Should NOT web search for the email or write Python scripts.
+
+  # --- Beat 2: User asks to make it a reply to existing thread ---
+
+  - actor: alex
+    message: >
+      Make this a reply to their latest email rather than a new thread.
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "gmail_send.py.*(draft-delete|draft)"
+          note: "Should delete old draft or create new one with --reply-to"
+      keywords: ["reply", "approve"]
+      max_tool_calls: 4
+    note: >
+      Homer should delete the previous draft and create a new one using
+      --reply-to MESSAGE_ID. Should NOT check --help.
+
+  # --- Beat 3: User asks to send to an internal address ---
+
+  - actor: alex
+    message: >
+      Also send a quick email to se.johnson@gmail.com letting her know
+      I emailed the water company about the autopay.
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "gmail_send\\.py.*(send|draft)"
+          note: "Should send or draft — send is preferred for internal, draft is acceptable"
+      max_tool_calls: 5
+    note: >
+      se.johnson@gmail.com is in HOMER_INTERNAL_EMAILS. Homer may use send
+      (direct) or draft (cautious) — both are acceptable. The send guard will
+      allow it either way. Relaxed max_tool_calls since Homer may read the
+      skill doc first.
+
+  # --- Beat 4: User asks to email someone Homer can find in context ---
+
+  - actor: alex
+    message: >
+      Can you email the HOA about the broken mailbox on our street?
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "gmail_send\\.py.*(draft|send)"
+          note: "Should draft or send an email to the HOA"
+      max_tool_calls: 5
+    note: >
+      Homer doesn't know the HOA email. Should ask the user for the
+      email address rather than guessing or web searching.

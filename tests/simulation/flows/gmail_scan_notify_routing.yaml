@@ -1,0 +1,140 @@
+name: "Gmail Scan Notify Routing — Primary + Secondary User"
+event_id: "sim_gmail_scan_routing"
+event_name: "Gmail Scan Routing Regression Guard"
+model: "gemini/gemini-3-pro-preview"
+
+# Two pending follow-ups seeded before the heartbeat fires:
+# - One initiated by the primary user (Alex) — reply should ping Alex on WhatsApp
+# - One initiated by the secondary member (Sam) — reply should ping Sam, NOT Alex
+#
+# The heartbeat's Gmail scan returns replies from both counterparties. Homer must
+# route each notification to the person who originally asked — via WhatsApp on
+# both counts — never via the email channel to a household email address.
+setup:
+  - tool: pending_reply
+    args:
+      - "--add"
+      - "--from"
+      - "Ben Blair"
+      - "--topic"
+      - "pool cover quote"
+      - "--notify-channel"
+      - "whatsapp"
+      - "--notify-recipient"
+      - "14125550001"
+
+  - tool: pending_reply
+    args:
+      - "--add"
+      - "--from"
+      - "Mike the plumber"
+      - "--topic"
+      - "water heater replacement quote"
+      - "--notify-channel"
+      - "whatsapp"
+      - "--notify-recipient"
+      - "14125550004"
+
+# Mock gmail_fetch so the heartbeat sees two actionable replies in one scan.
+mock_tools:
+  - pattern: "gmail_fetch\\.py"
+    response: |
+      [
+        {
+          "email_index": 1,
+          "email_id": "msg_ben_001",
+          "subject": "Re: Pool Cover",
+          "sender": "Ben Blair <dbblair8@example.com>",
+          "action": "Reply to Ben Blair with pool type and dimensions",
+          "urgency": "this_week",
+          "summary": "Ben Blair asked whether the pool is pre-existing to finalize the cover quote."
+        },
+        {
+          "email_index": 2,
+          "email_id": "msg_mike_002",
+          "subject": "Re: Water Heater Quote",
+          "sender": "Mike Robinson <mike@reliable-plumbing.example.com>",
+          "action": "Review Mike's water heater replacement quote",
+          "urgency": "this_week",
+          "summary": "Mike sent his quote for the water heater replacement — $2,150 installed."
+        }
+      ]
+
+  # Stub email_action_items so the setup step's bookkeeping succeeds without writing real state.
+  - pattern: "email_action_items\\.py"
+    response: |
+      {"status": "added", "id": "sim_action_001"}
+
+  # Stub pending_reply --complete so the test does not require round-tripping.
+  - pattern: "pending_reply\\.py --complete"
+    response: |
+      {"status": "completed"}
+
+heartbeat_md: |
+  # Heartbeat Tasks
+
+  This file is checked every 30 minutes by your nanobot agent.
+
+  ## CRITICAL: Silent Mode Rules
+
+  You are a background process. You are NOT in a conversation. There is no user waiting for a reply.
+
+  RULE 1 — DO NOT WRITE TEXT. Any text you write gets sent to users as a message. This is a bug.
+  Your response must contain ONLY tool calls (exec or message). Zero words. Zero sentences. Nothing.
+
+  RULE 2 — The ONLY way to communicate with users is the message tool.
+
+  RULE 3 — SKIP means stop. If any exec output starts with "SKIP:", tick the task and write nothing else.
+
+  ## User Tasks
+
+  System tasks (Type: system): run the task's exec per Heartbeat Execution rules in AGENTS.md, then tick.
+
+  ### Gmail scan
+  Type: system
+  Schedule: 2026-01-01 08:00
+  Recur: every 1 hour
+  Recipients: primary:whatsapp
+
+  ## Completed
+
+beats:
+  # --- Single heartbeat beat: routes both replies to the right owner ---
+  # Homer should:
+  #   1. exec gmail_fetch.py → sees two actionable items
+  #   2. For each item, cross-check Pending Follow-ups in USER.md:
+  #      - Ben Blair entry → notify via whatsapp → 14125550001 (Alex)
+  #      - Mike the plumber entry → notify via whatsapp → 14125550004 (Sam)
+  #   3. Complete each pending_reply entry by id
+  #   4. Log each via email_action_items.py
+  #   5. Tick the Gmail scan task
+  # MUST NOT: use channel=email, or notify an email address, or route Mike's reply to Alex.
+
+  - actor: alex
+    heartbeat: true
+    message: "Gmail scan (system)"
+    expect:
+      tools_used: ["exec", "message"]
+      message_channels: ["whatsapp"]
+      message_channels_forbidden: ["email"]
+      # Both primary (Alex) and secondary (Sam) WhatsApp chat_ids must appear
+      # in the message tool calls — one per pending follow-up.
+      message_chat_ids:
+        - "14125550001"
+        - "14125550004"
+      # Must not route to any @gmail.com or @example.com address (the email leak bug).
+      message_chat_ids_forbidden:
+        - "@gmail\\.com"
+        - "@joybuild\\.ai"
+      tool_sequence:
+        - pattern: "gmail_fetch\\.py"
+          note: "Should run the Gmail scan first"
+        - pattern: "pending_reply\\.py --complete"
+          note: "Should complete the pending follow-up entries"
+      max_tool_calls: 10
+    note: >
+      The heartbeat's Gmail scan returns two actionable replies — one from a thread
+      Alex (primary) started, one from a thread Sam (secondary) started. Homer must
+      route each notification to the original asker via WhatsApp. It must never use
+      channel=email, and the secondary user's reply must ping the secondary user's
+      chat_id, not the primary's.

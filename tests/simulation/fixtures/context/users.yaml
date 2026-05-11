@@ -1,0 +1,11 @@
+users:
+  - name: Alex
+    role: admin
+    channels:
+      telegram: "5550000001"
+      whatsapp: "14125550001"
+  - name: Sam
+    role: member
+    channels:
+      whatsapp: "14125550004"
+    briefing_style: "plain bullets, no emoji, skip the motivation line"

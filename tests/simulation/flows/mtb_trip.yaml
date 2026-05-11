@@ -1,0 +1,107 @@
+name: "MTB Bike Trip — Multi-User Simulation"
+event_id: "sim_mtb_trip"
+event_name: "MTB Bike Trip - Crested Butte"
+model: "gemini/gemini-3-pro-preview"
+
+# Setup actions run Homer tools directly (no LLM) to bootstrap event state.
+setup:
+  - tool: event_manage
+    args: ["--create", "--name", "MTB Bike Trip - Crested Butte", "--event-id", "sim_mtb_trip"]
+
+  - tool: event_manage
+    args: ["--update", "--event-id", "sim_mtb_trip", "--field", "dates", "--value", "2026-07-15 to 2026-07-20"]
+
+  - tool: event_manage
+    args: ["--update", "--event-id", "sim_mtb_trip", "--field", "Location", "--value", "Crested Butte, Colorado"]
+
+  - tool: manage_event_guest
+    args: ["--add", "--event-id", "sim_mtb_trip", "--name", "Emeka", "--phone", "+14125550002"]
+
+  - tool: manage_event_guest
+    args: ["--add", "--event-id", "sim_mtb_trip", "--name", "Wale", "--phone", "+14125550003"]
+
+beats:
+  # --- Phase 1: Date alignment ---
+
+  - actor: alex
+    message: >
+      I just set up the MTB bike trip to Crested Butte for July 15-20.
+      I added Emeka and Wale as guests. Can you confirm everything looks good?
+    expect:
+      keywords: ["Crested Butte", "July"]
+    note: "Primary verifies event setup"
+
+  - actor: emeka
+    message: "Hey! I heard about this bike trip. What are the dates?"
+    expect:
+      keywords: ["July 15", "20"]
+      no_keywords: ["budget", "cost"]
+    note: "Guest should answer dates from event context"
+
+  - actor: wale
+    message: "Yo what dates are we looking at? I need to check my calendar"
+    expect:
+      keywords: ["July 15"]
+    note: "Second guest also asks about dates — same context"
+
+  # --- Phase 2: Agenda and trip details ---
+
+  - actor: wale
+    message: "Is there an agenda yet? Like what are we actually doing each day?"
+    expect:
+      keywords: ["Crested Butte"]
+    note: "No agenda yet — should say so and mention what IS known (location, dates)"
+
+  - actor: emeka
+    message: "Where are we staying? And I don't have a mountain bike, is that a problem?"
+    note: "No lodging set yet — answer from context. Bike rental note doesn't need a web search"
+
+  # --- Phase 3: Escalation scenario ---
+
+  - actor: wale
+    message: "How much is this whole thing going to cost per person? I need to budget for it"
+    note: "Agent should check with Alex or give a helpful estimate — not say 'the organizer'"
+
+  # Primary resolves the escalation
+  - actor: alex
+    message: >
+      Check for any pending escalations and resolve them. Update the trip budget:
+      roughly $2000 per person for the 5 days — that covers the Airbnb ($800 total
+      split 3 ways), bike rentals ($80/day each), food, and gas. Let the guest know.
+    note: "Primary resolves budget escalation and updates event"
+    rebuild: true
+
+  # --- Phase 4: Primary adds details, guests see updates ---
+
+  - actor: alex
+    message: >
+      Update the trip with these details:
+      Lodging is a 3-bedroom Airbnb in Crested Butte, walking distance to the lifts.
+      Add these open items: "Book Airbnb", "Reserve bike rentals at Big Al's",
+      and "Plan a night out in town for Emeka".
+    rebuild: true
+    note: "Primary adds lodging + open items — triggers context refresh for guests"
+
+  - actor: emeka
+    message: "Any updates? Did y'all figure out where we're staying?"
+    expect:
+      keywords: ["Airbnb", "Crested Butte"]
+    note: "Guest should see updated lodging details after context refresh"
+
+  - actor: wale
+    message: "Did anyone figure out the cost breakdown?"
+    expect:
+      keywords: ["Airbnb"]
+    note: "After context refresh, guest should see lodging and budget details"
+
+  # --- Phase 5: Final confirmation ---
+
+  - actor: emeka
+    message: "Sounds great, I'm in! Also make sure we plan that night out, that's the main event for me lol"
+    note: "Guest confirms attendance — agent should acknowledge and note the night out open item"
+
+  - actor: wale
+    message: >
+      Alright I think I can make it work. Quick question though — I mostly ride Peloton
+      so I haven't been on a real trail in years. Are the trails beginner friendly?
+    note: "Agent should handle this from general knowledge (trail difficulty), not escalate"

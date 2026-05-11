@@ -1,0 +1,185 @@
+name: "Family Historian — Contributor onboarding, elicitation, story draft"
+event_id: "sim_family_historian"
+event_name: "Family Historian Simulation"
+model: "gemini/gemini-3-pro-preview"
+
+# Mock the Supabase-backed tool calls so the simulation doesn't need a real DB.
+mock_tools:
+  # Invite flow
+  - pattern: "history_invite\\.py.*--invite.*--name.*Grandma"
+    response: |
+      {"status": "invited", "contributor_id": "contrib-helen-001", "display_name": "Grandma Helen", "phone": "14155551234", "email": null, "contributor_status": "pending", "next_step": "Contributor will be activated automatically when they send their first WhatsApp message."}
+
+  - pattern: "history_invite\\.py.*--list"
+    response: |
+      [{"id": "contrib-helen-001", "display_name": "Grandma Helen", "relationship": "Grandma", "phone": "14155551234", "email": null, "status": "active", "role": "contributor", "verified_at": "2026-05-03T10:00:00Z"}]
+
+  # Scope management
+  - pattern: "history_manage\\.py.*--init"
+    response: |
+      {"status": "initialized", "scope_id": "family_history_test1234", "note": "Family history scope created."}
+
+  - pattern: "history_manage\\.py.*--add-contributor"
+    response: |
+      {"status": "added", "scope_id": "family_history_test1234", "participant_id": "14155551234@s.whatsapp.net", "display_name": "Grandma Helen"}
+
+  - pattern: "history_manage\\.py.*--status"
+    response: |
+      {"scope_id": "family_history_test1234", "scope_initialized": true, "contributors_total": 1, "contributors_active": 1, "contributors_pending": 0, "active_names": ["Grandma Helen"], "share_link_active": false}
+
+  - pattern: "history_manage\\.py.*--context.*contrib-helen-001"
+    response: |
+      {"contributor": {"id": "contrib-helen-001", "display_name": "Grandma Helen", "relationship": "Grandma", "status": "active"}, "recent_fragments": [], "open_threads": [], "era_coverage": []}
+
+  - pattern: "history_manage\\.py.*--context.*contrib-helen-002"
+    response: |
+      {"contributor": {"id": "contrib-helen-002", "display_name": "Grandma Helen", "relationship": "Grandma", "status": "active"}, "recent_fragments": [{"id": "frag-001", "kind": "person", "payload": {"name": "Aunt Mary"}, "confidence": 0.85, "attribution": "paraphrased"}, {"id": "frag-002", "kind": "place", "payload": {"name": "Lagos", "country": "Nigeria"}, "confidence": 0.9, "attribution": "paraphrased"}], "open_threads": [{"id": "thread-001", "prompt": "Ask about who taught Helen to cook jollof rice", "priority": 7, "status": "open"}], "era_coverage": [{"era_label": "childhood", "richness_score": 3.5}, {"era_label": "late-life", "richness_score": 0}]}
+
+  # Artifact write (history_manage doesn't write artifacts — homer calls history_extract)
+  - pattern: "history_extract\\.py.*--artifact-id"
+    response: |
+      {"artifact_id": "artifact-001", "fragments_written": 2, "fragment_ids": ["frag-001", "frag-002"]}
+
+  # Thread picking
+  - pattern: "history_thread_pick\\.py.*--contributor-id.*contrib-helen-001"
+    response: |
+      {"thread_id": null, "kind": "era_gap", "era_label": "childhood", "prompt": "You haven't told me much about your early childhood — what do you remember about where you grew up?"}
+
+  - pattern: "history_thread_pick\\.py.*--contributor-id.*contrib-helen-002"
+    response: |
+      {"thread_id": "thread-001", "kind": "open_thread", "prompt": "Ask about who taught Helen to cook jollof rice", "priority": 7}
+
+  - pattern: "history_thread_pick\\.py.*--mark-asked"
+    response: |
+      {"status": "ok", "thread_id": "thread-001", "thread_status": "asked"}
+
+  # Add thread
+  - pattern: "history_manage\\.py.*--add-thread"
+    response: |
+      {"status": "created", "thread_id": "thread-002", "contributor_id": "contrib-helen-001", "priority": 7, "prompt": "Ask more about the boat crossing to England"}
+
+  # Share link
+  - pattern: "history_publish\\.py.*--generate"
+    response: |
+      {"status": "created", "code": "HELEN001", "url": "https://history.example.com/h/HELEN001", "expires_at": null, "note": "Share this link with family members."}
+
+beats:
+  # ── Phase 1: Primary user sets up family history ──────────────────────────
+
+  - actor: alex
+    message: >
+      Homer, I want to start documenting my grandmother's life story. She's 88
+      and I want to capture her memories before it's too late. Can we set up the
+      family history feature and invite her to contribute via WhatsApp?
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "history_manage\\.py.*--init"
+          note: "Should initialize the family history scope"
+        - pattern: "history_invite\\.py.*--invite"
+          note: "Should invite Grandma Helen"
+        - pattern: "history_manage\\.py.*--add-contributor"
+          note: "Should add her to the scope"
+      keywords: ["Grandma", "WhatsApp"]
+      max_tool_calls: 6
+    note: >
+      Homer should: (1) initialize the family history scope,
+      (2) invite Grandma Helen via history_invite.py --invite,
+      (3) add her to the scope as a participant.
+      Should not hallucinate a phone number — should ask the user for it first
+      OR acknowledge it needs to be provided.
+
+  # ── Phase 2: Check status ─────────────────────────────────────────────────
+
+  - actor: alex
+    message: >
+      Great. How many contributors do we have so far and is the scope ready?
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "history_manage\\.py.*--status"
+          note: "Should check status"
+      keywords: ["Grandma Helen", "active"]
+      max_tool_calls: 2
+    note: >
+      Homer should call history_manage.py --status and report contributor count
+      and scope state. Should not hallucinate data.
+
+  # ── Phase 3: Historian receives first message ─────────────────────────────
+
+  - actor: alex
+    message: >
+      Grandma just sent her first WhatsApp message: "I grew up in a small
+      village in Ekiti State. We didn't have much but we were happy. My mother
+      made the best jollof rice in the whole village."
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "history_extract\\.py"
+          note: "Should extract fragments from the message"
+        - pattern: "history_thread_pick\\.py"
+          note: "Should pick the next follow-up thread"
+      keywords: ["jollof", "Ekiti"]
+      max_tool_calls: 5
+    note: >
+      Homer should: (1) extract fragments from the message,
+      (2) pick a follow-up thread (era_gap for childhood since it's sparse),
+      (3) respond with an acknowledgement in the historian voice + one follow-up question.
+      The response should NOT be chatbot-generic. Should use the sensory anchor or
+      concrete-instance technique. Should confirm one fragment (place: Ekiti State).
+
+  # ── Phase 4: Voice/elicitation quality check ─────────────────────────────
+
+  - actor: alex
+    message: >
+      The follow-up you suggested is good. But actually before we ask about childhood —
+      Grandma mentioned in a previous session that she came to England on a boat in 1962.
+      Can we add a thread to follow up on that?
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "history_manage\\.py.*--add-thread"
+          note: "Should create a follow-up thread about the boat crossing"
+      keywords: ["thread", "follow-up"]
+      max_tool_calls: 3
+    note: >
+      Homer should create a follow-up thread with appropriate prompt and priority.
+      Should NOT improvise a question — the thread is for the historian to use later.
+
+  # ── Phase 5: Draft a story ────────────────────────────────────────────────
+
+  - actor: alex
+    message: >
+      We have a few fragments now. Can you draft a short story about Grandma's
+      childhood in Ekiti based on what she's shared so far? Keep her voice —
+      don't polish it too much.
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "history_manage\\.py.*--context"
+          note: "Should fetch context including recent fragments"
+      keywords: ["Ekiti", "jollof"]
+      max_tool_calls: 4
+    note: >
+      Homer should: (1) fetch context for the contributor,
+      (2) draft a story that preserves Grandma's voice (not third-person narrator),
+      (3) use her phrases where possible,
+      (4) present the draft as "for curator review" — not auto-published.
+      Should NOT use generic phrasing like "Helen was a remarkable woman."
+
+  # ── Phase 6: Generate share link ─────────────────────────────────────────
+
+  - actor: alex
+    message: >
+      I want to share the published stories with the rest of the family.
+      Can you generate a share link for the public timeline?
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "history_publish\\.py.*--generate"
+          note: "Should generate a share link"
+      keywords: ["HELEN001", "history.example.com"]
+      max_tool_calls: 2
+    note: >
+      Homer should call history_publish.py --generate and present the share link.
+      Should explain the passcode model (anyone with the link can view shared stories).

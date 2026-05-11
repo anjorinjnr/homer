@@ -1,0 +1,77 @@
+name: "Onboarding — Workspace Push (no Google connected, fresh tenant)"
+event_id: "sim_onboarding_workspace_push"
+event_name: "Onboarding Workspace Push"
+model: "gemini/gemini-3-pro-preview"
+
+# Fresh tenant: name pre-filled at signup, no Google token, no BYOK,
+# household empty. `next_setup` should be `workspace` and Homer's first
+# reply should append a single primary-account OAuth link, not a context
+# question or a BYOK push.
+setup:
+  - tool: onboarding
+    args: ["reset", "--empty-household"]
+  - tool: onboarding
+    args:
+      - "answer"
+      - "--field-key"
+      - "primary_user.name"
+      - "--value"
+      - "Ada"
+      - "--source"
+      - "inferred"
+
+# link_account.py is a thin wrapper that prints a JSON URL — keep the call
+# shape stable so the test asserts on Homer running it (not on the exact URL).
+# The script defaults to --account primary when no flag is supplied; either
+# call shape is acceptable, so the regex matches both.
+mock_tools:
+  - pattern: "link_account\\.py"
+    response: |
+      {"url": "https://example.com/dashboard/connections?link=primary", "account": "primary"}
+  - pattern: "tasks_update\\.py.*--add.*dentist"
+    response: |
+      {"status": "added", "desc": "call the dentist", "schedule": "tomorrow 10:00"}
+
+beats:
+  # --- Beat 1: First-ever message. Homer answers + appends the workspace push.
+  - actor: alex
+    message: >
+      hey — can you remind me to call the dentist tomorrow at 10am?
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "onboarding\\.py.*status"
+          note: "Skill checks status; next_setup should be 'workspace'"
+        - pattern: "link_account\\.py"
+          note: "Skill generates the primary-account OAuth URL (default account)"
+        - pattern: "onboarding\\.py.*setup-mark.*workspace.*asked"
+          note: "Skill marks workspace as asked so the 24h cooldown engages"
+      keywords:
+        - "Google"
+      no_keywords:
+        - "what should I call you"      # name is already known
+        - "any kids"                    # context push is later, not now
+        - "default model"               # BYOK push is later, not now
+        - "household"                   # avoid mixing context push in
+      max_tool_calls: 12
+    note: >
+      Homer should: (1) create the dentist reminder, (2) append the workspace
+      push with the primary OAuth link, (3) mark workspace asked. Must NOT
+      append the context-import offer or the BYOK nudge in the same turn.
+
+  # --- Beat 2: User declines workspace. next_setup advances to context_import.
+  - actor: alex
+    message: >
+      not now — skip the Google thing for now
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "onboarding\\.py.*setup-mark.*workspace.*declined"
+          note: "User declined workspace; mark it so we stop pushing"
+      no_keywords:
+        - "Google"
+        - "calendar, email"
+      max_tool_calls: 6
+    note: >
+      Homer should mark workspace declined and acknowledge briefly.
+      Should not re-push the workspace link.

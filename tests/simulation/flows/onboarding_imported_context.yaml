@@ -1,0 +1,74 @@
+name: "Onboarding — Imported Context (no cold-start push)"
+event_id: "sim_onboarding_imported"
+event_name: "Onboarding Imported Context"
+model: "gemini/gemini-3-pro-preview"
+
+# Simulate a user who already pasted an export: all tier-1 fields are
+# pre-filled in household.md with source=imported, so parse-import should
+# have auto-advanced the phase to progressive. No cold-start push.
+setup:
+  - tool: onboarding
+    args: ["reset", "--empty-household"]
+  - tool: onboarding
+    args: ["answer", "--field-key", "primary_user.name", "--value", "Ada", "--source", "imported"]
+  - tool: onboarding
+    args: ["answer", "--field-key", "primary_user.role", "--value", "product designer", "--source", "imported"]
+  - tool: onboarding
+    args: ["answer", "--field-key", "home.address", "--value", "Austin, TX", "--source", "imported"]
+  - tool: onboarding
+    args: ["answer", "--field-key", "partner", "--value", "- Chike (partner)", "--source", "imported"]
+  - tool: onboarding
+    args: ["answer", "--field-key", "children", "--value", "- Zora (age 7)", "--source", "imported"]
+  # Pre-mark workspace + BYOK as done so the import flow tests *only* the
+  # context-already-imported path. Setup-checklist coverage lives in
+  # onboarding_workspace_push.yaml and onboarding_byok_offer.yaml.
+  - tool: onboarding
+    args: ["setup-mark", "--item", "workspace", "--status", "done"]
+  - tool: onboarding
+    args: ["setup-mark", "--item", "byok", "--status", "done"]
+
+beats:
+  # --- Beat 1: First message. Homer should use known context, NOT cold-push.
+  - actor: alex
+    message: >
+      can you give me a quick one-line summary of what you know about my
+      household?
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "onboarding\\.py.*status"
+          note: "Must check phase — should be progressive, so no cold-start push"
+      keywords:
+        - "Ada"
+        # Imported context is Ada/Chike/Zora — Homer should reply with it.
+      no_keywords:
+        - "don't know anything about you"
+        - "quick heads up"
+        - "mind if I ask"
+      # Allow some exploration (status, a household read, reply). Hitting the
+      # cap here still indicates Homer is over-working a simple context read.
+      max_tool_calls: 8
+    note: >
+      Homer should answer from the imported household context (Ada + Chike
+      + Zora). Must not emit a cold-start onboarding push and must not call
+      parse-import speculatively — tier-1 fields are already filled.
+
+  # --- Beat 2: User volunteers additional facts. Homer records them.
+  - actor: alex
+    message: >
+      adding a few more things: we have a dog (Rex, 4yo lab),
+      Zora goes to Maplewood Elementary, and Chike and I are both vegetarian.
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "onboarding\\.py.*(answer|parse-import)"
+          note: "Homer records the new fields via onboarding answer (or parse-import)"
+      no_keywords:
+        - "don't know anything about you"
+        - "quick heads up"
+      max_tool_calls: 10
+    note: >
+      Homer should record pets (Rex), children.schools (Maplewood Elementary),
+      and dietary.restrictions (vegetarian) — either via multiple onboarding
+      answer calls or by writing to household.md + parse-import. Must not
+      emit a cold-start push.

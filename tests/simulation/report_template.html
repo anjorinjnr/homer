@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{FLOW_NAME}} — {{RUN_ID}}</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --text-muted: #8b949e; --text-dim: #484f58;
+    --green: #3fb950; --red: #f85149; --yellow: #d29922;
+    --cyan: #58a6ff; --magenta: #bc8cff; --orange: #f0883e;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+
+  .header { padding: 24px 32px; border-bottom: 1px solid var(--border); }
+  .header h1 { font-size: 20px; font-weight: 600; }
+  .header .meta { color: var(--text-muted); font-size: 13px; margin-top: 4px; display: flex; gap: 16px; flex-wrap: wrap; }
+  .header .meta span { display: inline-flex; align-items: center; gap: 4px; }
+
+  .summary { display: flex; gap: 12px; padding: 16px 32px; flex-wrap: wrap; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; min-width: 120px; }
+  .stat .label { font-size: 11px; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px; }
+  .stat .value { font-size: 22px; font-weight: 600; margin-top: 2px; }
+  .stat .value.pass { color: var(--green); }
+  .stat .value.fail { color: var(--red); }
+  .stat .value.mixed { color: var(--yellow); }
+
+  .beats { padding: 16px 32px; }
+  .beat { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 12px; overflow: hidden; }
+  .beat.pass { border-left: 3px solid var(--green); }
+  .beat.fail { border-left: 3px solid var(--red); }
+  .beat.no-expect { border-left: 3px solid var(--border); }
+
+  .beat-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; }
+  .beat-header:hover { background: rgba(255,255,255,0.02); }
+  .beat-header .left { display: flex; align-items: center; gap: 10px; }
+  .beat-header .beat-num { font-size: 12px; color: var(--text-muted); font-weight: 600; min-width: 50px; }
+  .beat-header .actor-name { font-weight: 600; }
+  .beat-header .actor-name.primary { color: var(--cyan); }
+  .beat-header .actor-name.guest { color: var(--magenta); }
+  .beat-header .role-tag { font-size: 11px; color: var(--text-muted); background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; }
+  .beat-header .right { display: flex; align-items: center; gap: 12px; }
+  .beat-header .latency { font-size: 12px; color: var(--text-muted); }
+  .beat-header .status { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; }
+  .beat-header .status.pass { background: rgba(63,185,80,0.15); color: var(--green); }
+  .beat-header .status.fail { background: rgba(248,81,73,0.15); color: var(--red); }
+  .beat-header .chevron { color: var(--text-muted); transition: transform 0.15s; font-size: 12px; }
+  .beat.expanded .chevron { transform: rotate(90deg); }
+
+  .beat-body { padding: 16px; display: none; }
+  .beat.expanded .beat-body { display: block; }
+
+  .message { margin-bottom: 12px; }
+  .message-label { font-size: 11px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; letter-spacing: 0.5px; }
+  .message-content { padding: 10px 14px; border-radius: 6px; white-space: pre-wrap; word-wrap: break-word; font-size: 14px; }
+  .message-content.user { background: rgba(88,166,255,0.08); border: 1px solid rgba(88,166,255,0.15); }
+  .message-content.homer { background: rgba(63,185,80,0.06); border: 1px solid rgba(63,185,80,0.12); }
+
+  .tools-section { margin-bottom: 12px; }
+  .tools-section .label { font-size: 11px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; letter-spacing: 0.5px; }
+  .tools-toggle { cursor: pointer; user-select: none; }
+  .tools-toggle:hover { color: var(--text); }
+  .tools-chevron { font-size: 10px; display: inline-block; transition: transform 0.15s; }
+  .tools-section.collapsed .tools-chevron { transform: rotate(-90deg); }
+  .tools-section.collapsed .tool-list { display: none; }
+  .tool-list { display: flex; flex-direction: column; gap: 4px; }
+  .tool-card { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+  .tool-card.message-tool { border-color: rgba(63,185,80,0.3); }
+  .tool-card-header { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: rgba(255,255,255,0.03); cursor: pointer; user-select: none; }
+  .tool-card-header:hover { background: rgba(255,255,255,0.06); }
+  .tool-card-header .tool-name { color: var(--cyan); font-weight: 600; white-space: nowrap; }
+  .tool-card-header .tool-summary { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .tool-card-header .tool-chevron { color: var(--text-dim); font-size: 10px; transition: transform 0.15s; }
+  .tool-card.expanded .tool-chevron { transform: rotate(90deg); }
+  .tool-card-body { display: none; padding: 8px 10px; border-top: 1px solid var(--border); background: rgba(0,0,0,0.2); white-space: pre-wrap; word-wrap: break-word; color: var(--text); font-size: 12px; line-height: 1.5; max-height: 300px; overflow-y: auto; }
+  .tool-card.expanded .tool-card-body { display: block; }
+  .tool-card-body .msg-content { color: var(--green); margin-top: 4px; padding: 8px; background: rgba(63,185,80,0.06); border-radius: 4px; }
+
+  .expectations { margin-top: 8px; padding: 10px 14px; border-radius: 6px; font-size: 13px; }
+  .expectations.pass { background: rgba(63,185,80,0.06); border: 1px solid rgba(63,185,80,0.12); }
+  .expectations.fail { background: rgba(248,81,73,0.06); border: 1px solid rgba(248,81,73,0.12); }
+  .exp-row { margin: 4px 0; }
+  .exp-label { color: var(--text-muted); font-size: 11px; text-transform: uppercase; }
+  .exp-detail { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; margin-top: 2px; }
+  .exp-detail .found { color: var(--green); }
+  .exp-detail .missing { color: var(--red); }
+
+  .note { margin-top: 8px; font-size: 13px; color: var(--text-muted); font-style: italic; }
+
+  .expand-controls { padding: 8px 32px; display: flex; gap: 8px; }
+  .expand-controls button { font-size: 12px; padding: 4px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--surface); color: var(--text-muted); cursor: pointer; }
+  .expand-controls button:hover { color: var(--text); border-color: var(--text-muted); }
+
+  .context-section { margin: 12px 32px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .context-header { padding: 12px 16px; cursor: pointer; user-select: none; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid transparent; }
+  .context-header:hover { background: rgba(255,255,255,0.02); }
+  .context-section .chevron { font-size: 12px; color: var(--text-muted); transition: transform 0.15s; display: inline-block; }
+  .context-section.expanded .chevron { transform: rotate(90deg); }
+  .context-body { display: none; }
+  .context-section.expanded .context-body { display: block; }
+  .context-section.expanded .context-header { border-bottom-color: var(--border); }
+
+  .context-tabs { display: flex; border-bottom: 1px solid var(--border); }
+  .context-tab { padding: 8px 16px; cursor: pointer; font-size: 13px; color: var(--text-muted); border-bottom: 2px solid transparent; user-select: none; }
+  .context-tab:hover { color: var(--text); }
+  .context-tab.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+  .context-tab-pane { display: none; }
+  .context-tab-pane.active { display: block; }
+
+  .context-file { border-bottom: 1px solid var(--border); }
+  .context-file:last-child { border-bottom: none; }
+  .context-file-header { padding: 8px 16px; cursor: pointer; user-select: none; font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 8px; color: var(--text-muted); }
+  .context-file-header:hover { color: var(--text); background: rgba(255,255,255,0.02); }
+  .context-file-header .file-chevron { font-size: 10px; transition: transform 0.15s; display: inline-block; }
+  .context-file.expanded .file-chevron { transform: rotate(90deg); }
+  .context-file-body { display: none; padding: 0 16px 12px 16px; }
+  .context-file.expanded .context-file-body { display: block; }
+  .context-file-body pre { background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 6px; padding: 12px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; line-height: 1.5; overflow-x: auto; max-height: 500px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; color: var(--text); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1 id="title"></h1>
+  <div class="meta" id="meta"></div>
+</div>
+
+<div class="summary" id="summary"></div>
+
+<div class="expand-controls">
+  <button onclick="toggleAll(true)">Expand All</button>
+  <button onclick="toggleAll(false)">Collapse All</button>
+  <button onclick="showFailed()">Show Failed Only</button>
+  <button onclick="showAll()">Show All</button>
+</div>
+
+<div class="context-section" id="context-section">
+  <div class="context-header" onclick="document.getElementById('context-section').classList.toggle('expanded')">
+    <span class="chevron">&#9654;</span> Context Files
+  </div>
+  <div class="context-body" id="context-body"></div>
+</div>
+
+<div class="beats" id="beats"></div>
+
+<script>
+const DATA = {{TRAJECTORY_JSON}};
+
+function init() {
+  document.getElementById('title').textContent = DATA.flow_name;
+  document.title = `${DATA.flow_name} — ${DATA.run_id}`;
+
+  const meta = document.getElementById('meta');
+  meta.innerHTML = `
+    <span>Model: <strong>${DATA.model}</strong></span>
+    <span>Run: ${DATA.run_id}</span>
+    <span>Event: ${DATA.event_id}</span>
+    <span>Duration: ${(DATA.summary.total_latency_ms / 1000).toFixed(1)}s</span>
+  `;
+
+  const s = DATA.summary;
+  const passRate = s.expectations_checked > 0 ? s.expectations_passed / s.expectations_checked : 1;
+  const passClass = passRate === 1 ? 'pass' : passRate === 0 ? 'fail' : 'mixed';
+  const summary = document.getElementById('summary');
+  summary.innerHTML = `
+    <div class="stat"><div class="label">Beats</div><div class="value">${s.total_beats}</div></div>
+    <div class="stat"><div class="label">Expectations</div><div class="value ${passClass}">${s.expectations_passed}/${s.expectations_checked}</div></div>
+    <div class="stat"><div class="label">Total Time</div><div class="value">${(s.total_latency_ms / 1000).toFixed(1)}s</div></div>
+    <div class="stat"><div class="label">Avg Latency</div><div class="value">${(s.avg_latency_ms / 1000).toFixed(1)}s</div></div>
+  `;
+
+  const beatsEl = document.getElementById('beats');
+  const beatParts = [];
+  DATA.beats.forEach(beat => {
+    const hasExp = beat.expectations && Object.keys(beat.expectations).length > 0 && 'pass' in beat.expectations;
+    const passed = beat.passed;
+    const statusClass = !hasExp ? 'no-expect' : passed ? 'pass' : 'fail';
+
+    const toolCards = (beat.tool_calls || []).map((tc, idx) => {
+      const isMessage = tc.tool === 'message';
+      const args = tc.args || {};
+      let summary = tc.args_preview || '';
+      let bodyHtml = '';
+
+      if (isMessage) {
+        const to = args.chat_id || args.to || '';
+        const channel = args.channel || '';
+        summary = `→ ${channel}:${to}`;
+        const content = args.content || '';
+        bodyHtml = `<div class="msg-content">${formatMarkdown(content)}</div>`;
+      } else {
+        summary = summary.length > 100 ? summary.slice(0,100) + '…' : summary;
+        bodyHtml = `<pre>${escapeHtml(JSON.stringify(args, null, 2))}</pre>`;
+      }
+
+      const cardClass = isMessage ? 'tool-card message-tool' : 'tool-card';
+      return `<div class="${cardClass}" onclick="event.stopPropagation(); this.classList.toggle('expanded')">
+        <div class="tool-card-header">
+          <span class="tool-name">${tc.tool}</span>
+          <span class="tool-summary">${escapeHtml(summary)}</span>
+          <span class="tool-chevron">&#9654;</span>
+        </div>
+        <div class="tool-card-body">${bodyHtml}</div>
+      </div>`;
+    }).join('');
+
+    let expHtml = '';
+    if (hasExp) {
+      const exp = beat.expectations;
+      let rows = '';
+      for (const [key, val] of Object.entries(exp)) {
+        if (key === 'pass') continue;
+        if (key === 'keywords') {
+          const found = val.found.map(k => `<span class="found">${k}</span>`).join(', ');
+          const missing = val.missing.map(k => `<span class="missing">${k}</span>`).join(', ');
+          rows += `<div class="exp-row"><div class="exp-label">Keywords</div><div class="exp-detail">Found: ${found || '—'}${missing ? ' | Missing: ' + missing : ''}</div></div>`;
+        } else if (key === 'no_keywords') {
+          const leaked = val.leaked.length > 0 ? val.leaked.map(k => `<span class="missing">${k}</span>`).join(', ') : '<span class="found">none</span>';
+          rows += `<div class="exp-row"><div class="exp-label">Forbidden</div><div class="exp-detail">Leaked: ${leaked}</div></div>`;
+        } else if (key === 'escalation') {
+          const color = val.expected === val.fired ? 'found' : 'missing';
+          rows += `<div class="exp-row"><div class="exp-label">Escalation</div><div class="exp-detail"><span class="${color}">expected=${val.expected}, fired=${val.fired}</span></div></div>`;
+        } else if (key === 'tools_used') {
+          const missing = val.missing.length > 0 ? val.missing.map(k => `<span class="missing">${k}</span>`).join(', ') : '<span class="found">all present</span>';
+          rows += `<div class="exp-row"><div class="exp-label">Tools Used</div><div class="exp-detail">Missing: ${missing}</div></div>`;
+        } else if (key === 'tools_not_used') {
+          const used = val.used.length > 0 ? val.used.map(k => `<span class="missing">${k}</span>`).join(', ') : '<span class="found">none</span>';
+          rows += `<div class="exp-row"><div class="exp-label">Forbidden Tools</div><div class="exp-detail">Used: ${used}</div></div>`;
+        }
+      }
+      expHtml = `<div class="expectations ${exp.pass ? 'pass' : 'fail'}">${rows}</div>`;
+    }
+
+    const noteHtml = beat.note ? `<div class="note">${beat.note}</div>` : '';
+    const roleTag = beat.role === 'guest' ? '<span class="role-tag">guest</span>' : '';
+    const statusBadge = hasExp ? `<span class="status ${passed ? 'pass' : 'fail'}">${passed ? 'PASS' : 'FAIL'}</span>` : '';
+
+    beatParts.push(`
+      <div class="beat ${statusClass}" data-idx="${beat.beat_idx}">
+        <div class="beat-header" onclick="toggleBeat(this.parentElement)">
+          <div class="left">
+            <span class="beat-num">Beat ${beat.beat_idx}</span>
+            <span class="actor-name ${beat.role}">${beat.actor}</span>
+            ${roleTag}
+          </div>
+          <div class="right">
+            <span class="latency">${(beat.latency_ms / 1000).toFixed(1)}s</span>
+            ${statusBadge}
+            <span class="chevron">&#9654;</span>
+          </div>
+        </div>
+        <div class="beat-body">
+          <div class="message">
+            <div class="message-label">${beat.actor}</div>
+            <div class="message-content user">${escapeHtml(beat.message)}</div>
+          </div>
+          <div class="message">
+            <div class="message-label">Homer</div>
+            <div class="message-content homer">${formatMarkdown(beat.response)}</div>
+          </div>
+          ${toolCards ? `<div class="tools-section">
+            <div class="label tools-toggle" onclick="event.stopPropagation(); this.parentElement.classList.toggle('collapsed')">
+              <span class="tools-chevron">&#9660;</span> Tools (${beat.tool_calls.length})
+            </div>
+            <div class="tool-list">${toolCards}</div>
+          </div>` : ''}
+          ${expHtml}
+          ${noteHtml}
+        </div>
+      </div>
+    `);
+  });
+  beatsEl.innerHTML = beatParts.join('');
+
+  // Auto-expand failed beats
+  document.querySelectorAll('.beat.fail').forEach(el => el.classList.add('expanded'));
+
+  // Render context files
+  renderContextFiles();
+}
+
+function renderContextFiles() {
+  const cf = DATA.context_files || {};
+  const keys = Object.keys(cf);
+  if (keys.length === 0) {
+    document.getElementById('context-section').style.display = 'none';
+    return;
+  }
+
+  // Group by agent (main/guest)
+  const groups = {};
+  keys.forEach(k => {
+    const parts = k.split('/');
+    const agent = parts[0];
+    const fname = parts.slice(1).join('/');
+    if (!groups[agent]) groups[agent] = [];
+    groups[agent].push({ name: fname, content: cf[k] });
+  });
+
+  const agentLabels = { main: 'Main Agent', guest: 'Guest Agent' };
+  const agentKeys = Object.keys(groups);
+  const body = document.getElementById('context-body');
+
+  // Build tabs
+  let tabsHtml = '<div class="context-tabs">';
+  agentKeys.forEach((ak, i) => {
+    tabsHtml += `<div class="context-tab${i === 0 ? ' active' : ''}" onclick="switchContextTab('${ak}', this)">${agentLabels[ak] || ak}</div>`;
+  });
+  tabsHtml += '</div>';
+
+  // Build panes
+  let panesHtml = '';
+  agentKeys.forEach((ak, i) => {
+    const files = groups[ak];
+    let filesHtml = '';
+    files.forEach(f => {
+      filesHtml += `<div class="context-file">
+        <div class="context-file-header" onclick="this.parentElement.classList.toggle('expanded')">
+          <span class="file-chevron">&#9654;</span> ${escapeHtml(f.name)}
+        </div>
+        <div class="context-file-body"><pre>${escapeHtml(f.content)}</pre></div>
+      </div>`;
+    });
+    panesHtml += `<div class="context-tab-pane${i === 0 ? ' active' : ''}" data-agent="${ak}">${filesHtml}</div>`;
+  });
+
+  body.innerHTML = tabsHtml + panesHtml;
+}
+
+function switchContextTab(agent, tabEl) {
+  const section = document.getElementById('context-body');
+  section.querySelectorAll('.context-tab').forEach(t => t.classList.remove('active'));
+  tabEl.classList.add('active');
+  section.querySelectorAll('.context-tab-pane').forEach(p => {
+    p.classList.toggle('active', p.dataset.agent === agent);
+  });
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function formatMarkdown(s) {
+  let html = escapeHtml(s);
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  html = html.replace(/^## (.+)$/gm, '<strong style="font-size:15px">$1</strong>');
+  html = html.replace(/^- /gm, '  \u2022 ');
+  html = html.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" style="color:var(--cyan)">$1</a>');
+  return html;
+}
+
+function toggleBeat(el) { el.classList.toggle('expanded'); }
+function toggleAll(expand) { document.querySelectorAll('.beat').forEach(el => el.classList.toggle('expanded', expand)); }
+function showFailed() { document.querySelectorAll('.beat').forEach(el => { el.style.display = el.classList.contains('fail') ? '' : 'none'; }); }
+function showAll() { document.querySelectorAll('.beat').forEach(el => el.style.display = ''); }
+
+init();
+</script>
+</body>
+</html>

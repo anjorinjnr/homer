@@ -1,0 +1,100 @@
+name: "Onboarding — Cold Start (new user, name pre-filled at signup)"
+event_id: "sim_onboarding_cold_start"
+event_name: "Onboarding Cold Start"
+model: "gemini/gemini-3-pro-preview"
+
+# Wipe prior state, blank household.md, then pre-fill the primary user's
+# name — this matches hosted Homer reality where signup captures the name
+# before the first turn. Everything else (partner, address, kids, pets…)
+# is still unknown and should drive the cold-start push.
+#
+# Pre-mark workspace + BYOK as done so this flow exercises the *context*
+# push specifically. The dedicated workspace and BYOK flows live in
+# onboarding_workspace_push.yaml and onboarding_byok_offer.yaml.
+setup:
+  - tool: onboarding
+    args: ["reset", "--empty-household"]
+  - tool: onboarding
+    args:
+      - "answer"
+      - "--field-key"
+      - "primary_user.name"
+      - "--value"
+      - "Ada"
+      - "--source"
+      - "inferred"
+  - tool: onboarding
+    args: ["setup-mark", "--item", "workspace", "--status", "done"]
+  - tool: onboarding
+    args: ["setup-mark", "--item", "byok", "--status", "done"]
+
+# Mock reminder creation so beat 1 doesn't burn tool iterations inspecting
+# HEARTBEAT.md path issues — the reminder itself isn't what we're testing.
+# Scoped to the dentist task to avoid swallowing any other tasks_update call.
+mock_tools:
+  - pattern: "tasks_update\\.py.*--add.*dentist"
+    response: |
+      {"status": "added", "desc": "call the dentist", "schedule": "tomorrow 10:00"}
+
+beats:
+  # --- Beat 1: First-ever message. Homer must answer, then softly push gaps.
+  - actor: alex
+    message: >
+      hey — can you remind me to call the dentist tomorrow at 10am?
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "onboarding\\.py"
+          note: "Skill must check onboarding status before responding"
+      keywords: ["basics"]
+      no_keywords:
+        - "no I won't"
+        - "refuse"
+        - "don't know anything about you"
+        # Name is already known — must NOT ask for it again here.
+      # Beat 1 includes the reminder creation (tasks_update.py) in addition
+      # to the onboarding status check, so allow more exec calls.
+      max_tool_calls: 12
+    note: >
+      Homer should: (1) answer the user's actual request (add a reminder),
+      (2) append a soft cold-start push. Name is already known from signup
+      so the push must NOT re-ask for it — it should mention household /
+      location / allergies buckets that are still missing.
+
+  # --- Beat 2: User consents. Homer should batch Tier 1 gap questions.
+  - actor: alex
+    message: >
+      sure, go ahead — ask me whatever you need
+    expect:
+      # Homer may or may not re-call `gap` here — if it remembered the list
+      # from Beat 1's call it can batch from memory. Key assertions are:
+      # no re-ask for the name, and the batched questions cover household
+      # gaps (partner, kids, address).
+      no_keywords:
+        - "what should I call you"
+        # Name is already filled — must not re-ask.
+      keywords:
+        - "where"
+      max_tool_calls: 4
+    note: >
+      Homer should ask 2-3 batched tier-1 gap questions (partner, address,
+      children) in one message. Must not re-ask for the name.
+
+  # --- Beat 3: User answers. Homer must record each field.
+  - actor: alex
+    message: >
+      just me and my partner Chike in Austin TX — no kids, no pets.
+    expect:
+      tools_used: ["exec"]
+      tool_sequence:
+        - pattern: "onboarding\\.py.*(answer|decline).*partner"
+          note: "Records the partner as group answer"
+        - pattern: "onboarding\\.py.*answer.*home\\.address"
+          note: "Records the address"
+      no_keywords: ["error", "I can't"]
+      max_tool_calls: 10
+    note: >
+      Homer should parse the message and call onboarding.py answer for each
+      matched field (partner, address). "no kids, no pets" should be
+      handled as a decline (or empty-answer) for children and pets. After
+      recording, Homer should give a brief acknowledgement and move on.
