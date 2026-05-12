@@ -164,10 +164,10 @@ def test_metadata_expired_no_refresh_token_is_invalid(isolated_tokens):
 def test_metadata_unreadable_pickle_reports_broken_not_raises(isolated_tokens):
     tokens_dir, _ = isolated_tokens
     tokens_dir.mkdir(parents=True)
-    (tokens_dir / "kemi.pickle").write_bytes(b"this is not a valid pickle")
+    (tokens_dir / "extra.pickle").write_bytes(b"this is not a valid pickle")
 
-    record = accounts._account_metadata("kemi")
-    assert record["name"] == "kemi"
+    record = accounts._account_metadata("extra")
+    assert record["name"] == "extra"
     assert record["linked"] is True
     assert record["valid"] is False
     assert "unreadable" in record["reason"].lower()
@@ -222,9 +222,9 @@ def test_no_secret_material_in_unreadable_pickle_path(isolated_tokens):
     """The error path for malformed pickles must not leak file bytes."""
     tokens_dir, _ = isolated_tokens
     tokens_dir.mkdir(parents=True)
-    (tokens_dir / "kemi.pickle").write_bytes(b"DO-NOT-LEAK-this-is-pickle-content")
+    (tokens_dir / "extra.pickle").write_bytes(b"DO-NOT-LEAK-this-is-pickle-content")
 
-    record = accounts._account_metadata("kemi")
+    record = accounts._account_metadata("extra")
     blob = json.dumps(record)
     assert "DO-NOT-LEAK" not in blob, f"Pickle bytes leaked into error path: {blob}"
 
