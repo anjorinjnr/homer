@@ -28,6 +28,23 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from google_auth import LEGACY_TOKEN, SCOPES, TOKENS_DIR, resolve_token_path
 
+# Explicit allowlist of metadata fields. The pickle stays a black box to
+# this module; we only ever emit fields we've named here. A future refactor
+# that tries to e.g. include `creds.__dict__` will produce keys outside the
+# allowlist and get filtered, preventing accidental leak of refresh_token /
+# access_token / id_token / rapt_token / client_secret / quota_project_id.
+_ALLOWED_KEYS = frozenset({
+    "name",
+    "linked",
+    "valid",
+    "expired",
+    "expiry",
+    "scopes",
+    "scopes_count",
+    "missing_scopes",
+    "reason",
+})
+
 
 def _discover_account_names() -> list[str]:
     """Return the set of account names that have a token on disk.
@@ -58,14 +75,18 @@ def _account_metadata(name: str) -> dict:
 
     # Intentionally raw pickle.load — load_google_credentials() would
     # refresh-and-rewrite the token file, which violates the discovery
-    # tool's read-only contract.
+    # tool's read-only contract. Broad except: discovery should fail-soft
+    # on any unpickle failure (UnpicklingError, EOFError, OSError,
+    # ImportError, ModuleNotFoundError, ValueError, TypeError, AttributeError —
+    # all reachable for truncated or version-skewed pickles). A bad pickle
+    # for one account must not crash the whole discovery.
     try:
         with open(token_path, "rb") as f:
             creds = pickle.load(f)
-    except (OSError, pickle.UnpicklingError, EOFError, AttributeError) as e:
+    except Exception as e:
         record["valid"] = False
         record["reason"] = f"Token file unreadable: {type(e).__name__}"
-        return record
+        return {k: v for k, v in record.items() if k in _ALLOWED_KEYS}
 
     granted = list(getattr(creds, "scopes", None) or [])
     record["scopes"] = granted
@@ -86,7 +107,7 @@ def _account_metadata(name: str) -> dict:
     if expired and not refreshable:
         record["reason"] = "Token expired and no refresh_token — re-link required"
 
-    return record
+    return {k: v for k, v in record.items() if k in _ALLOWED_KEYS}
 
 
 def cmd_list() -> int:

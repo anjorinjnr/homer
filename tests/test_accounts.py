@@ -46,16 +46,31 @@ def _fake_creds(
     client_secret: str = "cs-secret-DO-NOT-LEAK",
     expiry: datetime | None = None,
 ) -> SimpleNamespace:
-    """Build a stand-in Credentials object covering only the attributes
-    accounts.py reads. Uses SimpleNamespace so pickling round-trips cleanly
-    and we don't need google-auth installed in the test env."""
+    """Build a stand-in Credentials object covering the FULL attribute
+    surface of a real google.oauth2.credentials.Credentials, with
+    DO-NOT-LEAK sentinel values on every sensitive field. The leak tests
+    grep the JSON output for those sentinels; if the discovery tool
+    ever starts emitting one of these fields (intentionally or via a
+    refactor that dumps creds.__dict__), the assertion fires."""
     return SimpleNamespace(
+        # Fields accounts.py legitimately reads:
         scopes=scopes,
         expired=expired,
         refresh_token=refresh_token,
+        expiry=expiry,
+        # Sensitive fields that real Credentials objects carry. None of
+        # these should ever appear in the JSON output. If a future refactor
+        # adds a new "helpful" field, expand both the sentinel set and the
+        # _ALLOWED_KEYS allowlist in tools/accounts.py.
         token=token,
         client_secret=client_secret,
-        expiry=expiry,
+        client_id="cid-secret-DO-NOT-LEAK",
+        id_token="idt-secret-DO-NOT-LEAK",
+        rapt_token="rapt-secret-DO-NOT-LEAK",
+        quota_project_id="qp-secret-DO-NOT-LEAK",
+        granted_scopes=["https://DO-NOT-LEAK.example/scope"],
+        account="DO-NOT-LEAK-account",
+        token_uri="https://oauth2.googleapis.com/token",
     )
 
 
@@ -212,6 +227,47 @@ def test_no_secret_material_in_unreadable_pickle_path(isolated_tokens):
     record = accounts._account_metadata("kemi")
     blob = json.dumps(record)
     assert "DO-NOT-LEAK" not in blob, f"Pickle bytes leaked into error path: {blob}"
+
+
+def test_metadata_keys_are_strictly_allowlisted(isolated_tokens):
+    """Defense-in-depth: even if a future refactor stamps an extra field
+    onto the record (via the pickle's __dict__ or whatever), the final
+    output must only contain fields explicitly in _ALLOWED_KEYS. This
+    test fails the moment someone introduces a new top-level key without
+    expanding the allowlist."""
+    tokens_dir, _ = isolated_tokens
+    _write_token(tokens_dir, "primary", _fake_creds(google_auth.SCOPES))
+
+    record = accounts._account_metadata("primary")
+
+    extra_keys = set(record.keys()) - accounts._ALLOWED_KEYS
+    assert extra_keys == set(), (
+        f"Unexpected keys in metadata output: {extra_keys}. "
+        f"If this is intentional, add to _ALLOWED_KEYS in accounts.py."
+    )
+
+
+def test_metadata_rejects_unreadable_pickle_via_broad_except(isolated_tokens):
+    """The broadened exception catch must cover non-pickle errors too —
+    a pickle whose class can't be imported in this Python should
+    fail-soft, not crash the whole discovery. The previous narrower
+    except (UnpicklingError/EOFError/OSError/AttributeError) would have
+    let ModuleNotFoundError propagate.
+
+    Construct a hand-rolled pickle stream that references a module name
+    that doesn't exist (`__nope__.bad`), forcing find_class to raise
+    ModuleNotFoundError at unpickle time."""
+    tokens_dir, _ = isolated_tokens
+    tokens_dir.mkdir(parents=True)
+    # Pickle protocol 2 STACK_GLOBAL: `\x80\x02c<module>\n<name>\n` is the
+    # canonical "build instance of <module>.<name>" prologue. We use it
+    # with a nonexistent module so the import fails.
+    bad = b"\x80\x02c__nope__\nbad\nq\x00.\x80\x02."
+    (tokens_dir / "broken.pickle").write_bytes(bad)
+
+    record = accounts._account_metadata("broken")
+    assert record["valid"] is False
+    assert "unreadable" in record["reason"].lower()
 
 
 # ── CLI plumbing ──────────────────────────────────────────────────────────────
