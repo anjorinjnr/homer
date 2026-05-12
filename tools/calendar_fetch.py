@@ -63,18 +63,34 @@ def list_calendars(token: str) -> list[dict]:
     what we can see in each calendar. The two we care about distinguishing
     are `freeBusyReader` (only "Busy" blocks, no titles) vs everything else
     (reader/writer/owner — full event details).
+
+    If gogcli ever omits the field, we surface a warning to stderr rather
+    than silently defaulting to "reader" — over-trusting a freeBusyReader
+    calendar as full-detail would make downstream insight reasoning
+    hallucinate titles.
     """
     data = gogcli.run(token, "calendar", "calendars")
     out = []
+    missing_role: list[str] = []
     for c in data.get("calendars", []):
         summary = c.get("summary") or c.get("id", "")
         if summary in SKIP_CALENDARS:
             continue
+        role = c.get("accessRole")
+        if not role:
+            missing_role.append(summary)
+            role = "reader"  # conservative fallback; warning logged below
         out.append({
             "id": c["id"],
             "summary": summary,
-            "access_role": c.get("accessRole") or c.get("access_role") or "reader",
+            "access_role": role,
         })
+    if missing_role:
+        sys.stderr.write(
+            "calendar_fetch: accessRole missing on gogcli response for "
+            f"{missing_role!r}; defaulting to 'reader'. If these are free/busy "
+            "shares, the brief may over-trust them as full-detail.\n"
+        )
     return out
 
 
@@ -109,12 +125,20 @@ def normalize_event(raw: dict, meta_by_id: dict[str, dict]) -> dict:
         is_all_day = True
     cal_id = raw.get("CalendarID", "")
     cal_meta = meta_by_id.get(cal_id, {})
-    access_role = cal_meta.get("access_role", "reader")
-    title = raw.get("summary", "(no title)")
+    # Note `or "reader"` not `default="reader"` — handles the cal_meta
+    # contains explicit None case (gogcli sometimes emits null).
+    access_role = cal_meta.get("access_role") or "reader"
+    title = raw.get("summary") or "(no title)"
     # An event is opaque (no title visible) if either:
     #   - the parent calendar grants only free/busy access, or
-    #   - the title is the literal "Busy" Google substitutes for restricted shares
-    is_opaque = access_role in OPAQUE_ACCESS_ROLES or title == "Busy"
+    #   - the title is Google's free/busy substitution string. Case-insensitive
+    #     because some clients have observed lowercase "busy" via the API,
+    #     and localized accounts may eventually see translated variants —
+    #     we keep the English match but normalize whitespace + case.
+    is_opaque = (
+        access_role in OPAQUE_ACCESS_ROLES
+        or title.strip().lower() == "busy"
+    )
     return {
         "title": title,
         "date": event_date,

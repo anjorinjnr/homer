@@ -145,6 +145,66 @@ def test_normalize_literal_busy_title_marks_opaque_even_when_role_unknown():
     assert out["is_opaque"] is True
 
 
+def test_normalize_missing_role_benign_title_is_not_opaque():
+    """Symmetric to the 'busy title is opaque' rule: an unknown calendar with
+    a real titled event must NOT be marked opaque. Pins the conservative
+    default in the other direction so a future contributor can't widen
+    OPAQUE_ACCESS_ROLES (or change the default role) without this test
+    catching the regression."""
+    raw = {
+        "summary": "Project Sync",
+        "start": {"dateTime": "2026-05-04T18:00:00-04:00"},
+        "CalendarID": "unknown-cal",
+    }
+    out = cf.normalize_event(raw, {})
+    assert out["is_opaque"] is False
+    assert out["access_role"] == "reader"
+
+
+@pytest.mark.parametrize("role", ["owner", "writer", "reader"])
+def test_normalize_full_visibility_roles_are_not_opaque(role):
+    """All non-freeBusy access roles produce is_opaque=False regardless of
+    title content. Catches a regression where someone widens
+    OPAQUE_ACCESS_ROLES to include reader/writer/owner by accident."""
+    raw = {
+        "summary": "Standup",
+        "start": {"dateTime": "2026-05-04T09:00:00-04:00"},
+        "CalendarID": "cal-1",
+    }
+    out = cf.normalize_event(raw, _cal_meta("cal-1", "Team", access_role=role))
+    assert out["is_opaque"] is False
+
+
+@pytest.mark.parametrize("busy_form", ["Busy", "busy", "BUSY", "  Busy  ", "Busy\n"])
+def test_normalize_busy_title_case_and_whitespace_insensitive(busy_form):
+    """Google's free/busy substitution is canonically 'Busy' but observed
+    variants (lowercase, surrounding whitespace) appear in some client
+    paths. Treat them all as opaque rather than silently leaking title-
+    based 'busy' reasoning into the insight layer."""
+    raw = {
+        "summary": busy_form,
+        "start": {"dateTime": "2026-05-04T18:00:00-04:00"},
+        "CalendarID": "unknown-cal",
+    }
+    out = cf.normalize_event(raw, {})
+    assert out["is_opaque"] is True
+
+
+def test_normalize_handles_null_access_role_in_metadata():
+    """gogcli may emit accessRole as JSON null. cal_meta then contains
+    {"access_role": None} which a `dict.get(key, default)` would NOT replace.
+    Verify we fall through to 'reader' rather than leaking access_role=None
+    downstream (or crashing on the `in OPAQUE_ACCESS_ROLES` check)."""
+    raw = {
+        "summary": "Standup",
+        "start": {"dateTime": "2026-05-04T09:00:00-04:00"},
+        "CalendarID": "cal-1",
+    }
+    out = cf.normalize_event(raw, {"cal-1": {"summary": "Cal", "access_role": None}})
+    assert out["access_role"] == "reader"
+    assert out["is_opaque"] is False
+
+
 # ── list_calendars() ──────────────────────────────────────────────────────────
 
 
