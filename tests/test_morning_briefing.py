@@ -112,6 +112,10 @@ class TestMainOutput:
         # Default: assume Google is connected so existing tests exercise the
         # full briefing path. Tests that exercise the SKIP path override this.
         monkeypatch.setattr(mb, "has_google_token", lambda *a, **kw: google_connected)
+        # gather_briefing now fans out across discovered accounts. The default
+        # set is the primary account so existing tests keep their single-source
+        # shape; multi-account fan-out has its own dedicated tests.
+        monkeypatch.setattr(mb, "_valid_account_names", lambda: ["primary"])
         def mock_run_tool(script, extra_args=None):
             if "calendar_fetch" in script:
                 return calendar_data
@@ -133,8 +137,11 @@ class TestMainOutput:
     def test_output_with_calendar_events(self, monkeypatch, capsys):
         result = self._run_main(monkeypatch, capsys, calendar_data=SAMPLE_CALENDAR)
         assert result["type"] == "morning_briefing"
-        assert result["today_events"] == [{"title": "Dentist"}]
-        assert result["week_events"] == [{"title": "Meeting"}]
+        # Each event carries its source account so the LLM can label per-source
+        # in multi-account households. Single-account still gets the label
+        # (cheap; downstream may ignore when only one account exists).
+        assert result["today_events"] == [{"title": "Dentist", "account": "primary"}]
+        assert result["week_events"] == [{"title": "Meeting", "account": "primary"}]
         assert "date" in result
         assert "calendar_error" not in result
 
@@ -640,3 +647,108 @@ class TestLogMotivation:
             mb.main()
         out = json.loads(capsys.readouterr().out)
         assert "error" in out
+
+
+# ── Multi-account fan-out ──────────────────────────────────────────────────
+
+
+class TestMultiAccountFanout:
+    """The brief fans out across every linked Google account whose token is
+    valid, merges results, and tags each event with its source account.
+    Tests stub _valid_account_names and the calendar fetch helper so
+    discovery + subprocess details stay out of the assertion surface."""
+
+    def _run_main_with_accounts(self, monkeypatch, capsys, *,
+                                account_names: list[str],
+                                per_account_calendar: dict[str, dict | None],
+                                cli_account: str | None = None):
+        monkeypatch.setattr(mb, "datetime", _FrozenDatetimeApr9)
+        monkeypatch.setattr(mb, "has_google_token", lambda *a, **kw: True)
+        monkeypatch.setattr(mb, "_valid_account_names", lambda: account_names)
+        monkeypatch.setattr(
+            mb,
+            "_fetch_calendar_for",
+            lambda name: per_account_calendar.get(name),
+        )
+        monkeypatch.setattr(
+            mb,
+            "run_tool",
+            lambda script, extra_args=None: None,
+        )
+        argv = ["morning_briefing.py"]
+        if cli_account:
+            argv += ["--account", cli_account]
+        monkeypatch.setattr(sys, "argv", argv)
+        mb.main()
+        return json.loads(capsys.readouterr().out)
+
+    def test_events_from_each_account_merged_with_labels(self, monkeypatch, capsys):
+        per_account = {
+            "primary": {"today_events": [{"title": "Standup"}], "week_events": []},
+            "personal": {"today_events": [{"title": "Dinner"}], "week_events": []},
+        }
+        result = self._run_main_with_accounts(
+            monkeypatch, capsys,
+            account_names=["primary", "personal"],
+            per_account_calendar=per_account,
+        )
+        labels = sorted(e["account"] for e in result["today_events"])
+        assert labels == ["personal", "primary"]
+        # The brief advertises which accounts it pulled from.
+        assert result["accounts"] == ["primary", "personal"]
+        assert "calendar_partial" not in result
+
+    def test_single_account_no_partial_marker(self, monkeypatch, capsys):
+        per_account = {
+            "primary": {"today_events": [{"title": "Standup"}], "week_events": []},
+        }
+        result = self._run_main_with_accounts(
+            monkeypatch, capsys,
+            account_names=["primary"],
+            per_account_calendar=per_account,
+        )
+        # Single-account brief omits the multi-account `accounts` summary
+        # (it's only useful when there's more than one).
+        assert "accounts" not in result
+        assert "calendar_partial" not in result
+
+    def test_partial_failure_marks_brief_but_keeps_succeeded_accounts(self, monkeypatch, capsys):
+        per_account = {
+            "primary": {"today_events": [{"title": "Standup"}], "week_events": []},
+            "personal": None,
+        }
+        result = self._run_main_with_accounts(
+            monkeypatch, capsys,
+            account_names=["primary", "personal"],
+            per_account_calendar=per_account,
+        )
+        assert result["calendar_partial"] == ["personal"]
+        # No `calendar_error` — primary succeeded, so the brief is partial,
+        # not failed.
+        assert "calendar_error" not in result
+        assert [e["account"] for e in result["today_events"]] == ["primary"]
+
+    def test_all_accounts_fail_emits_calendar_error(self, monkeypatch, capsys):
+        per_account = {"primary": None, "personal": None}
+        result = self._run_main_with_accounts(
+            monkeypatch, capsys,
+            account_names=["primary", "personal"],
+            per_account_calendar=per_account,
+        )
+        assert result["calendar_error"] == "Could not fetch calendar events"
+        assert set(result["calendar_partial"]) == {"primary", "personal"}
+        assert result["today_events"] == []
+
+    def test_explicit_account_flag_overrides_discovery(self, monkeypatch, capsys):
+        per_account = {
+            "primary": {"today_events": [{"title": "Standup"}], "week_events": []},
+            "personal": {"today_events": [{"title": "Dinner"}], "week_events": []},
+        }
+        result = self._run_main_with_accounts(
+            monkeypatch, capsys,
+            account_names=["primary", "personal"],  # discovery sees both
+            per_account_calendar=per_account,
+            cli_account="personal",                  # but CLI restricts to one
+        )
+        assert [e["title"] for e in result["today_events"]] == ["Dinner"]
+        assert "accounts" not in result  # single-account run

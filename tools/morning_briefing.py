@@ -21,6 +21,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).parent))
+import accounts
 from google_auth import has_google_token
 from manage_users import list_users as _list_users
 from tasks_update import TASK_TYPE_REMINDER
@@ -108,8 +109,8 @@ def _relative_date(d: date, today: date) -> str:
     return d.strftime("%b %-d")
 
 
-def _enrich_event(e: dict, today: date) -> dict:
-    """Add display_date + display_time to a calendar event."""
+def _enrich_event(e: dict, today: date, account: str | None = None) -> dict:
+    """Add display_date + display_time (+ source account label) to a calendar event."""
     out = dict(e)
     iso = e.get("date", "")
     try:
@@ -120,7 +121,46 @@ def _enrich_event(e: dict, today: date) -> dict:
     raw_time = e.get("time", "")
     if raw_time and raw_time != "all-day":
         out["display_time"] = _friendly_time_from_str(raw_time)
+    if account:
+        out["account"] = account
     return out
+
+
+def _valid_account_names() -> list[str]:
+    """Names of all linked Google accounts whose tokens are usable. Drops
+    accounts with unreadable or expired-non-refreshable tokens so a single
+    stale account doesn't break the whole brief."""
+    return [
+        name for name in accounts._discover_account_names()
+        if accounts._account_metadata(name).get("valid")
+    ]
+
+
+def _fetch_calendar_for(account: str) -> dict | None:
+    """Run calendar_fetch.py for one account. Returns its parsed JSON or
+    None if the subprocess failed."""
+    return run_tool("calendar_fetch.py", ["--account", account])  # type: ignore[return-value]
+
+
+def _merge_calendar_payloads(per_account: dict[str, dict | None]) -> tuple[list, list, list[str]]:
+    """Combine multiple calendar_fetch payloads into one (today, week, failed).
+
+    Events from each account are stamped with an ``account`` field. Returns
+    the merged today_events, week_events, and the list of accounts that
+    failed to fetch so the brief can mark itself partial.
+    """
+    today_events: list[dict] = []
+    week_events: list[dict] = []
+    failed: list[str] = []
+    for name, payload in per_account.items():
+        if payload is None:
+            failed.append(name)
+            continue
+        for e in payload.get("today_events", []) or []:
+            today_events.append({**e, "account": name})
+        for e in payload.get("week_events", []) or []:
+            week_events.append({**e, "account": name})
+    return today_events, week_events, failed
 
 
 def _enrich_reminder(r: dict, today: date) -> dict:
@@ -191,17 +231,29 @@ def log_motivation(line: str) -> None:
     print(json.dumps({"status": "logged", "kept": len(history)}))
 
 
-def gather_briefing() -> dict:
+def gather_briefing(account: str | None = None) -> dict:
+    """Build the morning briefing payload.
+
+    If ``account`` is provided, calendar data is fetched from that account
+    only. If omitted, calendar fan-out runs across every linked account
+    whose token is valid — events from each are tagged with an ``account``
+    field so the LLM can label them per-source in the formatted brief.
+    """
     from concurrent.futures import ThreadPoolExecutor
 
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        cal_future = pool.submit(run_tool, "calendar_fetch.py")
+    cal_accounts = [account] if account else _valid_account_names()
+
+    with ThreadPoolExecutor(max_workers=max(3, len(cal_accounts))) as pool:
+        cal_futures = {name: pool.submit(_fetch_calendar_for, name) for name in cal_accounts}
         actions_future = pool.submit(run_tool, "email_action_items.py", ["--list"])
         tasks_future = pool.submit(run_tool, "tasks_update.py", ["--list"])
 
-    calendar_data = cal_future.result()
+    per_account_calendar = {name: f.result() for name, f in cal_futures.items()}
     action_items_data = actions_future.result()
     tasks_data = tasks_future.result()
+
+    today_events_raw, week_events_raw, failed_accounts = _merge_calendar_payloads(per_account_calendar)
+    multi_account = len(cal_accounts) > 1
 
     today = datetime.now(LOCAL_TZ).date()
 
@@ -232,22 +284,25 @@ def gather_briefing() -> dict:
     action_items = [_enrich_action_item(a)
                     for a in (action_items_data if isinstance(action_items_data, list) else [])]
 
-    today_events_raw = calendar_data.get("today_events", []) if calendar_data else []
-    week_events_raw = calendar_data.get("week_events", []) if calendar_data else []
-
     briefing: dict = {
         "type": "morning_briefing",
         "date": today.isoformat(),
-        "today_events": [_enrich_event(e, today) for e in today_events_raw],
-        "week_events": [_enrich_event(e, today) for e in week_events_raw],
+        "today_events": [_enrich_event(e, today, e.get("account")) for e in today_events_raw],
+        "week_events": [_enrich_event(e, today, e.get("account")) for e in week_events_raw],
         "action_items": action_items,
         "reminders": reminders,
         "users": load_users(),
         "recent_motivations": load_recent_motivations(),
     }
 
-    if not calendar_data:
-        briefing["calendar_error"] = "Could not fetch calendar events"
+    if multi_account:
+        briefing["accounts"] = cal_accounts
+    if failed_accounts:
+        briefing["calendar_partial"] = failed_accounts
+        if len(failed_accounts) == len(cal_accounts):
+            # All accounts failed — caller wants the same signal the
+            # single-account path used to emit.
+            briefing["calendar_error"] = "Could not fetch calendar events"
     return briefing
 
 
@@ -255,6 +310,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Morning briefing data + motivation log")
     parser.add_argument("--log-motivation", dest="log_line",
                         help="Append this motivation line to state (rolling last 7)")
+    parser.add_argument("--account",
+                        help="Restrict calendar fetch to one account. Omit to fan out across "
+                             "every linked account whose token is valid.")
     args = parser.parse_args()
 
     if args.log_line is not None:
@@ -280,7 +338,7 @@ def main() -> None:
         )
         return
 
-    print(json.dumps(gather_briefing()))
+    print(json.dumps(gather_briefing(account=args.account)))
 
 
 if __name__ == "__main__":
