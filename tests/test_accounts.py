@@ -172,18 +172,6 @@ def test_metadata_missing_scopes_reported(isolated_tokens):
 # ── Secret containment (the critical invariant) ───────────────────────────────
 
 
-def _flatten(value):
-    """Yield every string anywhere inside a JSON-shaped value."""
-    if isinstance(value, str):
-        yield value
-    elif isinstance(value, dict):
-        for v in value.values():
-            yield from _flatten(v)
-    elif isinstance(value, list):
-        for v in value:
-            yield from _flatten(v)
-
-
 @pytest.mark.parametrize("expired,refresh_token", [
     (False, "rt-secret-DO-NOT-LEAK"),
     (True, "rt-secret-DO-NOT-LEAK"),

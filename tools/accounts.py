@@ -26,7 +26,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from google_auth import LEGACY_TOKEN, SCOPES, TOKENS_DIR
+from google_auth import LEGACY_TOKEN, SCOPES, TOKENS_DIR, resolve_token_path
 
 
 def _discover_account_names() -> list[str]:
@@ -52,12 +52,13 @@ def _account_metadata(name: str) -> dict:
     record with linked=true and a reason, so the caller still sees the
     account exists even if its token is corrupt.
     """
-    token_path = TOKENS_DIR / f"{name}.pickle"
-    if not token_path.exists() and name == "primary" and LEGACY_TOKEN.exists():
-        token_path = LEGACY_TOKEN
+    token_path = resolve_token_path(name) or (TOKENS_DIR / f"{name}.pickle")
 
     record: dict = {"name": name, "linked": True}
 
+    # Intentionally raw pickle.load — load_google_credentials() would
+    # refresh-and-rewrite the token file, which violates the discovery
+    # tool's read-only contract.
     try:
         with open(token_path, "rb") as f:
             creds = pickle.load(f)
