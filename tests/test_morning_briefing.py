@@ -864,3 +864,146 @@ class TestMultiAccountFanout:
         assert "accounts_attempted" not in result
         assert "calendar_partial" not in result
         assert [e["title"] for e in result["today_events"]] == ["Standup"]
+
+
+# ── Conflict detection ────────────────────────────────────────────────────
+
+
+class TestConflictDetection:
+    """The brief surfaces overlapping timed events as a `conflicts` list so
+    the agent can render a heads-up. Detection is mechanical (interval
+    overlap on same date); semantic / delegation reasoning is downstream."""
+
+    def _ev(self, title, start_min, end_min, *, date="2026-04-09",
+            account="primary", calendar="primary", is_opaque=False,
+            is_all_day=False):
+        return {
+            "title": title,
+            "date": date,
+            "time": f"{start_min // 60}:{start_min % 60:02d}",
+            "end_time": f"{end_min // 60}:{end_min % 60:02d}",
+            "start_minutes": start_min,
+            "end_minutes": end_min,
+            "is_all_day": is_all_day,
+            "account": account,
+            "calendar": calendar,
+            "is_opaque": is_opaque,
+        }
+
+    def test_no_conflicts_when_events_dont_overlap(self):
+        events = [
+            self._ev("A", 9 * 60, 10 * 60),
+            self._ev("B", 10 * 60, 11 * 60),  # back-to-back, no overlap
+            self._ev("C", 14 * 60, 15 * 60),
+        ]
+        assert mb._detect_conflicts(events) == []
+
+    def test_detects_simple_overlap(self):
+        events = [
+            self._ev("Standup", 9 * 60, 10 * 60),
+            self._ev("Dentist", 9 * 60 + 30, 10 * 60 + 30),
+        ]
+        conflicts = mb._detect_conflicts(events)
+        assert len(conflicts) == 1
+        c = conflicts[0]
+        assert c["event_a"]["title"] == "Standup"
+        assert c["event_b"]["title"] == "Dentist"
+        assert c["overlap_start_minutes"] == 9 * 60 + 30
+        assert c["overlap_end_minutes"] == 10 * 60
+
+    def test_detects_cross_account_conflict_flag(self):
+        events = [
+            self._ev("Standup", 9 * 60, 10 * 60, account="work"),
+            self._ev("School pickup", 9 * 60 + 30, 10 * 60 + 30, account="personal"),
+        ]
+        conflicts = mb._detect_conflicts(events)
+        assert conflicts[0]["cross_account"] is True
+
+    def test_same_account_conflict_not_cross(self):
+        events = [
+            self._ev("A", 9 * 60, 10 * 60, account="primary"),
+            self._ev("B", 9 * 60 + 30, 10 * 60 + 30, account="primary"),
+        ]
+        conflicts = mb._detect_conflicts(events)
+        assert conflicts
+        assert conflicts[0]["cross_account"] is False
+
+    def test_both_opaque_flagged(self):
+        """When both sides are free/busy-only blocks, the agent has less to
+        say beyond 'you're double-booked' — surface the flag so the
+        rendering layer can tone down the message."""
+        events = [
+            self._ev("Busy", 9 * 60, 10 * 60, is_opaque=True),
+            self._ev("Busy", 9 * 60 + 30, 10 * 60 + 30, is_opaque=True),
+        ]
+        conflicts = mb._detect_conflicts(events)
+        assert conflicts[0]["both_opaque"] is True
+
+    def test_one_opaque_one_clear_not_both_opaque(self):
+        events = [
+            self._ev("Busy", 9 * 60, 10 * 60, is_opaque=True),
+            self._ev("Standup", 9 * 60 + 30, 10 * 60 + 30, is_opaque=False),
+        ]
+        conflicts = mb._detect_conflicts(events)
+        assert conflicts[0]["both_opaque"] is False
+
+    def test_all_day_event_does_not_create_conflict(self):
+        """An all-day 'Spring Break' does not conflict with a timed standup;
+        users routinely have both."""
+        events = [
+            self._ev("Spring Break", 0, 0, is_all_day=True),
+            self._ev("Standup", 9 * 60, 10 * 60),
+        ]
+        assert mb._detect_conflicts(events) == []
+
+    def test_different_dates_dont_conflict(self):
+        events = [
+            self._ev("Today event", 9 * 60, 10 * 60, date="2026-04-09"),
+            self._ev("Tomorrow event", 9 * 60 + 30, 10 * 60 + 30, date="2026-04-10"),
+        ]
+        assert mb._detect_conflicts(events) == []
+
+    def test_three_way_pile_up_emits_pairwise(self):
+        """Three overlapping events → 3 pairs. Downstream agent decides
+        how to present (probably collapses adjacent pairs into one
+        'triple-booked' message)."""
+        events = [
+            self._ev("A", 9 * 60, 11 * 60),
+            self._ev("B", 9 * 60 + 30, 10 * 60 + 30),
+            self._ev("C", 10 * 60, 10 * 60 + 45),
+        ]
+        conflicts = mb._detect_conflicts(events)
+        pairs = {(c["event_a"]["title"], c["event_b"]["title"]) for c in conflicts}
+        assert pairs == {("A", "B"), ("A", "C"), ("B", "C")}
+
+    def test_legacy_event_without_end_minutes_skipped(self):
+        """Pre-end_minutes events (legacy payloads or all-day) can't be
+        compared for overlap and must be skipped rather than blowing up."""
+        events = [
+            {"title": "Old", "date": "2026-04-09", "is_all_day": False,
+             "start_minutes": 540, "end_minutes": None, "account": "primary"},
+            self._ev("New", 9 * 60 + 30, 10 * 60 + 30),
+        ]
+        assert mb._detect_conflicts(events) == []
+
+    def test_zero_duration_event_skipped(self):
+        """An event with end == start (sometimes seen for reminders or
+        misconfigured events) cannot create a conflict."""
+        events = [
+            self._ev("Zero", 9 * 60, 9 * 60),
+            self._ev("Standup", 9 * 60, 10 * 60),
+        ]
+        assert mb._detect_conflicts(events) == []
+
+    def test_brief_output_includes_conflicts_field(self, monkeypatch, capsys):
+        """The brief always emits a `conflicts` list, empty by default."""
+        monkeypatch.setattr(mb, "datetime", _FrozenDatetimeApr9)
+        monkeypatch.setattr(mb, "has_google_token", lambda *a, **kw: True)
+        monkeypatch.setattr(mb.accounts, "list_valid_accounts", lambda: ["primary"])
+        monkeypatch.setattr(mb, "run_tool",
+                            lambda script, extra_args=None:
+                            {"today_events": [], "week_events": []} if "calendar_fetch" in script else None)
+        monkeypatch.setattr(sys, "argv", ["morning_briefing.py"])
+        mb.main()
+        result = json.loads(capsys.readouterr().out)
+        assert result["conflicts"] == []

@@ -162,6 +162,63 @@ def _event_sort_key(e: dict) -> tuple[str, int, str]:
     return (date_iso, minutes, e.get("title") or "")
 
 
+def _detect_conflicts(timed_events: list[dict]) -> list[dict]:
+    """Find pairs of overlapping timed events.
+
+    Two events conflict if they share the same date and their [start, end)
+    intervals overlap. Events without resolvable start/end times (all-day,
+    legacy payloads pre-end_minutes) are skipped — they can't physically
+    double-book the user the way two timed events can.
+
+    Each result describes the overlap with enough metadata for the agent
+    to render a useful heads-up (titles, calendar/account labels for both
+    sides, the overlap window in minutes, opacity flags so the agent
+    knows when it's flagging a "you're blocked but the reason is hidden"
+    case vs a "two real meetings clash" case).
+    """
+    candidates = [
+        e for e in timed_events
+        if not e.get("is_all_day")
+        and isinstance(e.get("start_minutes"), int)
+        and isinstance(e.get("end_minutes"), int)
+        and e["end_minutes"] > e["start_minutes"]
+    ]
+    candidates.sort(key=lambda e: (e.get("date") or "", e["start_minutes"]))
+
+    conflicts: list[dict] = []
+    for i, a in enumerate(candidates):
+        for b in candidates[i + 1:]:
+            if (a.get("date") or "") != (b.get("date") or ""):
+                break  # sorted by date; further b's are later days
+            if b["start_minutes"] >= a["end_minutes"]:
+                continue  # no overlap with a; later b's might still overlap others
+            overlap_start = max(a["start_minutes"], b["start_minutes"])
+            overlap_end = min(a["end_minutes"], b["end_minutes"])
+            conflicts.append({
+                "date": a.get("date") or "",
+                "overlap_start_minutes": overlap_start,
+                "overlap_end_minutes": overlap_end,
+                "event_a": _conflict_event_view(a),
+                "event_b": _conflict_event_view(b),
+                "cross_account": (a.get("account") or "") != (b.get("account") or ""),
+                "both_opaque": bool(a.get("is_opaque") and b.get("is_opaque")),
+            })
+    return conflicts
+
+
+def _conflict_event_view(e: dict) -> dict:
+    """Trim a full event dict to just the fields a conflict entry needs.
+    Keeps the structure deterministic and small for the LLM."""
+    return {
+        "title": e.get("title") or "(no title)",
+        "time": e.get("time") or "",
+        "end_time": e.get("end_time") or "",
+        "calendar": e.get("calendar") or "",
+        "account": e.get("account") or "",
+        "is_opaque": bool(e.get("is_opaque")),
+    }
+
+
 def _merge_calendar_payloads(
     per_account: dict[str, dict | None],
     today: date,
@@ -325,11 +382,14 @@ def gather_briefing(account: str | None = None) -> dict:
     action_items = [_enrich_action_item(a)
                     for a in (action_items_data if isinstance(action_items_data, list) else [])]
 
+    conflicts = _detect_conflicts(today_events)
+
     briefing: dict = {
         "type": "morning_briefing",
         "date": today.isoformat(),
         "today_events": today_events,
         "week_events": week_events,
+        "conflicts": conflicts,
         "action_items": action_items,
         "reminders": reminders,
         "users": load_users(),

@@ -114,11 +114,25 @@ def normalize_event(raw: dict, meta_by_id: dict[str, dict]) -> dict:
     """Map a gogcli event into Homer's existing calendar-event shape, with
     access_role + is_opaque tags carried through from the parent calendar."""
     start = raw.get("start", {})
+    end = raw.get("end", {})
+    start_minutes: int | None = None
+    end_minutes: int | None = None
+    end_time_str = ""
     if "dateTime" in start:
         start_dt = datetime.fromisoformat(start["dateTime"]).astimezone(LOCAL_TZ)
         event_date = start_dt.date().isoformat()
         time_str = start_dt.strftime("%-I:%M %p")
+        start_minutes = start_dt.hour * 60 + start_dt.minute
         is_all_day = False
+        if "dateTime" in end:
+            end_dt = datetime.fromisoformat(end["dateTime"]).astimezone(LOCAL_TZ)
+            end_time_str = end_dt.strftime("%-I:%M %p")
+            # Clamp same-day end so cross-midnight events don't make
+            # conflict detection look like negative-duration overlaps.
+            if end_dt.date() == start_dt.date():
+                end_minutes = end_dt.hour * 60 + end_dt.minute
+            else:
+                end_minutes = 24 * 60  # spans into next day → treat as "until midnight"
     else:
         event_date = start.get("date", "")
         time_str = "all-day"
@@ -143,6 +157,9 @@ def normalize_event(raw: dict, meta_by_id: dict[str, dict]) -> dict:
         "title": title,
         "date": event_date,
         "time": time_str,
+        "end_time": end_time_str,
+        "start_minutes": start_minutes,
+        "end_minutes": end_minutes,
         "is_all_day": is_all_day,
         "location": raw.get("location", ""),
         "description": (raw.get("description") or "")[:300].strip(),
