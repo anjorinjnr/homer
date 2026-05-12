@@ -60,6 +60,19 @@ def get_token_path(account: str = DEFAULT_ACCOUNT) -> Path:
     return TOKENS_DIR / f"{account}.pickle"
 
 
+def resolve_token_path(account: str = DEFAULT_ACCOUNT) -> Path | None:
+    """Return the on-disk path for ``account``'s token, or None if no
+    token exists. Honors the legacy fallback for ``primary`` so callers
+    don't have to re-implement that branch.
+    """
+    canonical = get_token_path(account)
+    if canonical.exists():
+        return canonical
+    if account == DEFAULT_ACCOUNT and LEGACY_TOKEN.exists():
+        return LEGACY_TOKEN
+    return None
+
+
 def has_google_token(account: str = DEFAULT_ACCOUNT) -> bool:
     """Check whether ``account`` is plausibly connected to Google.
 
@@ -70,9 +83,7 @@ def has_google_token(account: str = DEFAULT_ACCOUNT) -> bool:
     short-circuit: skip subprocess spawns + HTTP retries for tenants
     that obviously haven't connected Google yet.
     """
-    if get_token_path(account).exists():
-        return True
-    return account == DEFAULT_ACCOUNT and LEGACY_TOKEN.exists()
+    return resolve_token_path(account) is not None
 
 
 def _migrate_legacy_token(account: str, token_path: Path) -> bool:
