@@ -29,6 +29,11 @@ def _assume_google_connected(monkeypatch):
 # ── normalize_event() ─────────────────────────────────────────────────────────
 
 
+def _cal_meta(cal_id: str, summary: str, access_role: str = "reader") -> dict:
+    """Mimic the calendar metadata dict shape that fetch_events builds."""
+    return {cal_id: {"id": cal_id, "summary": summary, "access_role": access_role}}
+
+
 def test_normalize_timed_event_localized():
     raw = {
         "id": "evt1",
@@ -38,7 +43,7 @@ def test_normalize_timed_event_localized():
         "start": {"dateTime": "2026-05-04T15:30:00-04:00", "timeZone": "America/New_York"},
         "CalendarID": "cal-id-1",
     }
-    out = cf.normalize_event(raw, {"cal-id-1": "Work"})
+    out = cf.normalize_event(raw, _cal_meta("cal-id-1", "Work"))
     assert out["title"] == "Standup"
     assert out["date"] == "2026-05-04"
     assert out["time"] == "3:30 PM"
@@ -48,6 +53,8 @@ def test_normalize_timed_event_localized():
     assert out["calendar"] == "Work"
     assert out["calendar_id"] == "cal-id-1"
     assert out["event_id"] == "evt1"
+    assert out["access_role"] == "reader"
+    assert out["is_opaque"] is False
 
 
 def test_normalize_all_day_event():
@@ -57,7 +64,7 @@ def test_normalize_all_day_event():
         "start": {"date": "2026-05-10"},
         "CalendarID": "cal-id-2",
     }
-    out = cf.normalize_event(raw, {"cal-id-2": "Family"})
+    out = cf.normalize_event(raw, _cal_meta("cal-id-2", "Family"))
     assert out["date"] == "2026-05-10"
     assert out["time"] == "all-day"
     assert out["is_all_day"] is True
@@ -71,7 +78,7 @@ def test_normalize_missing_title_falls_back():
 
 def test_normalize_unknown_calendar_id_falls_back_to_id():
     raw = {"summary": "x", "start": {"date": "2026-05-10"}, "CalendarID": "stranger"}
-    out = cf.normalize_event(raw, {"known": "Known Cal"})
+    out = cf.normalize_event(raw, _cal_meta("known", "Known Cal"))
     assert out["calendar"] == "stranger"
 
 
@@ -84,6 +91,118 @@ def test_normalize_truncates_long_description():
     }
     out = cf.normalize_event(raw, {})
     assert len(out["description"]) <= 300
+
+
+# ── access_role + is_opaque tagging ─────────────────────────────────────────
+
+
+def test_normalize_freebusy_calendar_marks_event_opaque():
+    """Events from a calendar shared with only free/busy access carry
+    is_opaque=True so downstream code reasons over availability, not content."""
+    raw = {
+        "id": "wrk-blk-1",
+        "summary": "Busy",  # Google substitutes this for restricted shares
+        "start": {"dateTime": "2026-05-04T18:00:00-04:00"},
+        "CalendarID": "shared-cal",
+    }
+    out = cf.normalize_event(
+        raw, _cal_meta("shared-cal", "Shared Cal (free/busy)", access_role="freeBusyReader")
+    )
+    assert out["access_role"] == "freeBusyReader"
+    assert out["is_opaque"] is True
+    assert out["title"] == "Busy"
+
+
+def test_normalize_titled_event_on_reader_calendar_not_opaque():
+    """Reader access (or higher) on a shared calendar gives us full event
+    detail — no opacity flag even if the title happens to contain the word
+    'Busy'."""
+    raw = {
+        "id": "ev1",
+        "summary": "Busy preparing for launch",
+        "start": {"dateTime": "2026-05-04T18:00:00-04:00"},
+        "CalendarID": "team-cal",
+    }
+    out = cf.normalize_event(
+        raw, _cal_meta("team-cal", "Team", access_role="reader")
+    )
+    assert out["is_opaque"] is False
+
+
+def test_normalize_literal_busy_title_marks_opaque_even_when_role_unknown():
+    """If access_role metadata is missing but the event title is exactly
+    'Busy', treat it as opaque anyway — this is the Google signature for a
+    restricted share. Conservative side: we'd rather treat a real event
+    titled 'Busy' as opaque than expose a 'Busy' that's secretly hiding
+    detail."""
+    raw = {
+        "id": "ev2",
+        "summary": "Busy",
+        "start": {"dateTime": "2026-05-04T18:00:00-04:00"},
+        "CalendarID": "unknown-cal",
+    }
+    out = cf.normalize_event(raw, {})  # no metadata for the calendar
+    assert out["is_opaque"] is True
+
+
+def test_normalize_missing_role_benign_title_is_not_opaque():
+    """Symmetric to the 'busy title is opaque' rule: an unknown calendar with
+    a real titled event must NOT be marked opaque. Pins the conservative
+    default in the other direction so a future contributor can't widen
+    OPAQUE_ACCESS_ROLES (or change the default role) without this test
+    catching the regression."""
+    raw = {
+        "summary": "Project Sync",
+        "start": {"dateTime": "2026-05-04T18:00:00-04:00"},
+        "CalendarID": "unknown-cal",
+    }
+    out = cf.normalize_event(raw, {})
+    assert out["is_opaque"] is False
+    assert out["access_role"] == "reader"
+
+
+@pytest.mark.parametrize("role", ["owner", "writer", "reader"])
+def test_normalize_full_visibility_roles_are_not_opaque(role):
+    """All non-freeBusy access roles produce is_opaque=False regardless of
+    title content. Catches a regression where someone widens
+    OPAQUE_ACCESS_ROLES to include reader/writer/owner by accident."""
+    raw = {
+        "summary": "Standup",
+        "start": {"dateTime": "2026-05-04T09:00:00-04:00"},
+        "CalendarID": "cal-1",
+    }
+    out = cf.normalize_event(raw, _cal_meta("cal-1", "Team", access_role=role))
+    assert out["is_opaque"] is False
+
+
+@pytest.mark.parametrize("busy_form", ["Busy", "busy", "BUSY", "  Busy  ", "Busy\n"])
+def test_normalize_busy_title_case_and_whitespace_insensitive(busy_form):
+    """Google's free/busy substitution is canonically 'Busy' but observed
+    variants (lowercase, surrounding whitespace) appear in some client
+    paths. Treat them all as opaque rather than silently leaking title-
+    based 'busy' reasoning into the insight layer."""
+    raw = {
+        "summary": busy_form,
+        "start": {"dateTime": "2026-05-04T18:00:00-04:00"},
+        "CalendarID": "unknown-cal",
+    }
+    out = cf.normalize_event(raw, {})
+    assert out["is_opaque"] is True
+
+
+def test_normalize_handles_null_access_role_in_metadata():
+    """gogcli may emit accessRole as JSON null. cal_meta then contains
+    {"access_role": None} which a `dict.get(key, default)` would NOT replace.
+    Verify we fall through to 'reader' rather than leaking access_role=None
+    downstream (or crashing on the `in OPAQUE_ACCESS_ROLES` check)."""
+    raw = {
+        "summary": "Standup",
+        "start": {"dateTime": "2026-05-04T09:00:00-04:00"},
+        "CalendarID": "cal-1",
+    }
+    out = cf.normalize_event(raw, {"cal-1": {"summary": "Cal", "access_role": None}})
+    assert out["access_role"] == "reader"
+    assert out["is_opaque"] is False
 
 
 # ── list_calendars() ──────────────────────────────────────────────────────────
@@ -107,6 +226,40 @@ def test_list_calendars_falls_back_to_id_when_summary_missing(monkeypatch):
     monkeypatch.setattr(gogcli, "run", lambda token, *args: payload)
     cals = cf.list_calendars("tok")
     assert cals[0]["summary"] == "x@y"
+
+
+def test_list_calendars_extracts_access_role(monkeypatch):
+    payload = {"calendars": [
+        {"id": "own@x", "summary": "Own", "accessRole": "owner"},
+        {"id": "shared@x", "summary": "Spouse Work", "accessRole": "freeBusyReader"},
+        {"id": "team@x", "summary": "Team", "accessRole": "reader"},
+    ]}
+    monkeypatch.setattr(gogcli, "run", lambda token, *args: payload)
+    cals = cf.list_calendars("tok")
+    roles = {c["summary"]: c["access_role"] for c in cals}
+    assert roles == {"Own": "owner", "Spouse Work": "freeBusyReader", "Team": "reader"}
+
+
+def test_list_calendars_defaults_access_role_when_absent(monkeypatch):
+    """gogcli might not include accessRole in older outputs — default to
+    `reader` rather than crashing or treating events as opaque."""
+    payload = {"calendars": [{"id": "x@y", "summary": "Cal"}]}
+    monkeypatch.setattr(gogcli, "run", lambda token, *args: payload)
+    cals = cf.list_calendars("tok")
+    assert cals[0]["access_role"] == "reader"
+
+
+def test_list_calendars_default_denylist_expanded(monkeypatch):
+    """Phases of the Moon and Week Numbers are also noisy subscribed cals
+    most users don't want in their brief by default."""
+    payload = {"calendars": [
+        {"id": "moon@x", "summary": "Phases of the Moon"},
+        {"id": "wk@x", "summary": "Week Numbers"},
+        {"id": "work@x", "summary": "Work"},
+    ]}
+    monkeypatch.setattr(gogcli, "run", lambda token, *args: payload)
+    cals = cf.list_calendars("tok")
+    assert [c["summary"] for c in cals] == ["Work"]
 
 
 # ── fetch_events() ────────────────────────────────────────────────────────────
