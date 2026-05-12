@@ -133,15 +133,45 @@ def _fetch_calendar_for(account: str) -> dict | None:
     return result if isinstance(result, dict) else None
 
 
+def _event_sort_key(e: dict) -> tuple[str, int, str]:
+    """Stable cross-account sort key: (date, minutes-since-midnight, title).
+
+    Single-account briefs implicitly relied on calendar_fetch returning
+    events in chronological order. Fan-out across accounts breaks that
+    unless we re-sort: a 7pm dinner from `personal` would otherwise land
+    before a 9am standup from `primary` (per-account order, not time).
+    """
+    date_iso = e.get("date") or ""
+    raw_time = e.get("time") or ""
+    minutes = 0  # all-day / unparseable → sort before timed events
+    if raw_time and raw_time != "all-day":
+        m = re.match(r"^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$", raw_time.strip(), re.IGNORECASE)
+        if m:
+            h = int(m.group(1))
+            mm = int(m.group(2) or 0)
+            suf = (m.group(3) or "").lower()
+            if suf == "pm" and h != 12:
+                h += 12
+            elif suf == "am" and h == 12:
+                h = 0
+            minutes = h * 60 + mm
+        else:
+            m24 = re.match(r"^(\d{1,2}):(\d{2})$", raw_time.strip())
+            if m24:
+                minutes = int(m24.group(1)) * 60 + int(m24.group(2))
+    return (date_iso, minutes, e.get("title") or "")
+
+
 def _merge_calendar_payloads(
     per_account: dict[str, dict | None],
     today: date,
 ) -> tuple[list, list, list[str]]:
     """Combine multi-account calendar_fetch payloads into enriched lists.
 
-    Returns the merged today_events, week_events (each event enriched and
-    stamped with its source account), and the names of accounts whose
-    fetch returned None so the brief can mark itself partial.
+    Returns today_events, week_events (each event enriched and stamped
+    with its source account, sorted by (date, time) across accounts),
+    and the names of accounts whose fetch returned None so the brief
+    can mark itself partial.
     """
     today_events: list[dict] = []
     week_events: list[dict] = []
@@ -154,6 +184,8 @@ def _merge_calendar_payloads(
             today_events.append(_enrich_event(e, today, account=name))
         for e in payload.get("week_events", []) or []:
             week_events.append(_enrich_event(e, today, account=name))
+    today_events.sort(key=_event_sort_key)
+    week_events.sort(key=_event_sort_key)
     return today_events, week_events, failed
 
 
@@ -229,13 +261,26 @@ def gather_briefing(account: str | None = None) -> dict:
     """Build the morning briefing payload.
 
     If ``account`` is provided, calendar data is fetched from that account
-    only. If omitted, calendar fan-out runs across every linked account
-    whose token is valid — events from each are tagged with an ``account``
-    field so the LLM can label them per-source in the formatted brief.
+    only — and only if the name is in list_valid_accounts(); an unknown
+    or unlinked name returns an explicit error instead of silently
+    fanning out to a nonexistent account and surfacing as a generic
+    calendar_error. If omitted, calendar fan-out runs across every
+    linked account whose token is valid — events from each are tagged
+    with an ``account`` field so the LLM can label them per-source.
     """
     from concurrent.futures import ThreadPoolExecutor
 
-    cal_accounts = [account] if account else accounts.list_valid_accounts()
+    valid_accounts = accounts.list_valid_accounts()
+    if account is not None:
+        if account not in valid_accounts:
+            return {
+                "type": "morning_briefing",
+                "error": f"Unknown or unlinked account: '{account}'",
+                "available_accounts": valid_accounts,
+            }
+        cal_accounts = [account]
+    else:
+        cal_accounts = valid_accounts
     today = datetime.now(LOCAL_TZ).date()
 
     # Cap pool size so a pathological token store with dozens of stale
@@ -292,7 +337,10 @@ def gather_briefing(account: str | None = None) -> dict:
     }
 
     if multi_account:
-        briefing["accounts"] = cal_accounts
+        # `accounts_attempted` (not `accounts`) so the LLM doesn't have to
+        # subtract `calendar_partial` to know who actually contributed
+        # events. Successful accounts = accounts_attempted - calendar_partial.
+        briefing["accounts_attempted"] = cal_accounts
     if failed_accounts:
         briefing["calendar_partial"] = failed_accounts
         if len(failed_accounts) == len(cal_accounts):

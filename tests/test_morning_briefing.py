@@ -694,11 +694,12 @@ class TestMultiAccountFanout:
         )
         labels = sorted(e["account"] for e in result["today_events"])
         assert labels == ["personal", "primary"]
-        # The brief advertises which accounts it pulled from.
-        assert result["accounts"] == ["primary", "personal"]
+        # `accounts_attempted` lists every account we tried. Successful
+        # accounts = accounts_attempted - calendar_partial.
+        assert result["accounts_attempted"] == ["primary", "personal"]
         assert "calendar_partial" not in result
 
-    def test_single_account_no_partial_marker(self, monkeypatch, capsys):
+    def test_single_account_no_attempted_marker(self, monkeypatch, capsys):
         per_account = {
             "primary": {"today_events": [{"title": "Standup"}], "week_events": []},
         }
@@ -707,9 +708,9 @@ class TestMultiAccountFanout:
             account_names=["primary"],
             per_account_calendar=per_account,
         )
-        # Single-account brief omits the multi-account `accounts` summary
-        # (it's only useful when there's more than one).
-        assert "accounts" not in result
+        # Single-account brief omits the multi-account `accounts_attempted`
+        # summary (it's only useful when there's more than one).
+        assert "accounts_attempted" not in result
         assert "calendar_partial" not in result
 
     def test_partial_failure_marks_brief_but_keeps_succeeded_accounts(self, monkeypatch, capsys):
@@ -751,4 +752,73 @@ class TestMultiAccountFanout:
             cli_account="personal",                  # but CLI restricts to one
         )
         assert [e["title"] for e in result["today_events"]] == ["Dinner"]
-        assert "accounts" not in result  # single-account run
+        assert "accounts_attempted" not in result  # single-account run
+
+    def test_explicit_account_unknown_returns_error_not_silent_fanout(self, monkeypatch, capsys):
+        """A typo or stale account name on --account should produce a clear
+        error message + the list of available accounts, NOT a silent
+        fan-out to a nonexistent account that surfaces as a generic
+        calendar_error."""
+        result = self._run_main_with_accounts(
+            monkeypatch, capsys,
+            account_names=["primary", "personal"],
+            per_account_calendar={},
+            cli_account="bogus",
+        )
+        assert "error" in result
+        assert "bogus" in result["error"]
+        assert result["available_accounts"] == ["primary", "personal"]
+        # Must NOT have fanned out — none of the regular brief keys present.
+        assert "today_events" not in result
+        assert "calendar_error" not in result
+
+    def test_events_sorted_chronologically_across_accounts(self, monkeypatch, capsys):
+        """Cross-account merge must sort by (date, time) so a 7pm event
+        from one account doesn't render before a 9am event from another."""
+        per_account = {
+            "primary": {
+                "today_events": [
+                    {"title": "Late Dinner", "date": "2026-04-09", "time": "7:00 PM"},
+                ],
+                "week_events": [],
+            },
+            "personal": {
+                "today_events": [
+                    {"title": "Morning Standup", "date": "2026-04-09", "time": "9:00 AM"},
+                    {"title": "Lunch", "date": "2026-04-09", "time": "12:30 PM"},
+                ],
+                "week_events": [],
+            },
+        }
+        result = self._run_main_with_accounts(
+            monkeypatch, capsys,
+            account_names=["primary", "personal"],
+            per_account_calendar=per_account,
+        )
+        titles = [e["title"] for e in result["today_events"]]
+        assert titles == ["Morning Standup", "Lunch", "Late Dinner"], (
+            f"events out of chronological order: {titles}"
+        )
+
+    def test_all_day_events_sort_before_timed_events(self, monkeypatch, capsys):
+        per_account = {
+            "primary": {
+                "today_events": [
+                    {"title": "Standup", "date": "2026-04-09", "time": "9:00 AM"},
+                ],
+                "week_events": [],
+            },
+            "personal": {
+                "today_events": [
+                    {"title": "Holiday", "date": "2026-04-09", "time": "all-day"},
+                ],
+                "week_events": [],
+            },
+        }
+        result = self._run_main_with_accounts(
+            monkeypatch, capsys,
+            account_names=["primary", "personal"],
+            per_account_calendar=per_account,
+        )
+        titles = [e["title"] for e in result["today_events"]]
+        assert titles == ["Holiday", "Standup"]
