@@ -117,7 +117,11 @@ def cmd_list() -> int:
 
 
 def cmd_show(name: str) -> int:
-    if name not in _discover_account_names():
+    # resolve_token_path is the same predicate _discover_account_names uses
+    # to enumerate, but it costs one stat per name vs a glob over the whole
+    # tokens dir. Skip the directory scan and check the canonical path
+    # directly.
+    if resolve_token_path(name) is None:
         print(json.dumps({"error": f"Account '{name}' is not linked"}))
         return 1
     print(json.dumps(_account_metadata(name), indent=2))
