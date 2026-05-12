@@ -191,7 +191,9 @@ def _detect_conflicts(timed_events: list[dict]) -> list[dict]:
             if (a.get("date") or "") != (b.get("date") or ""):
                 break  # sorted by date; further b's are later days
             if b["start_minutes"] >= a["end_minutes"]:
-                continue  # no overlap with a; later b's might still overlap others
+                # Sorted by start_minutes within a date; once b starts after
+                # a ends, every later b' (b'.start >= b.start) also misses a.
+                break
             overlap_start = max(a["start_minutes"], b["start_minutes"])
             overlap_end = min(a["end_minutes"], b["end_minutes"])
             conflicts.append({
@@ -208,15 +210,43 @@ def _detect_conflicts(timed_events: list[dict]) -> list[dict]:
 
 def _conflict_event_view(e: dict) -> dict:
     """Trim a full event dict to just the fields a conflict entry needs.
-    Keeps the structure deterministic and small for the LLM."""
+    Keeps the structure deterministic and small for the LLM. `location`
+    is high-signal for "you're in two places" framing; `event_id` lets
+    the agent dedupe across multiple briefing renders for the same day."""
     return {
         "title": e.get("title") or "(no title)",
         "time": e.get("time") or "",
         "end_time": e.get("end_time") or "",
+        "location": e.get("location") or "",
         "calendar": e.get("calendar") or "",
         "account": e.get("account") or "",
+        "event_id": e.get("event_id") or "",
         "is_opaque": bool(e.get("is_opaque")),
     }
+
+
+def _cross_account_dedup_key(e: dict) -> tuple:
+    """Best-effort identity for "this is the same calendar event, just
+    surfaced on multiple linked accounts." A shared family calendar
+    visible to both work and personal accounts would otherwise produce
+    two entries that conflict-detection then flags as a cross-account
+    overlap with itself.
+
+    event_id is the strongest signal when present (Google Calendar IDs
+    are stable across the calendars an event appears on). Falls back to
+    (date, start_minutes, end_minutes, normalized title) so single-cal
+    payloads without ids still dedupe reasonably.
+    """
+    eid = e.get("event_id")
+    if eid:
+        return ("id", eid)
+    return (
+        "shape",
+        e.get("date") or "",
+        e.get("start_minutes"),
+        e.get("end_minutes"),
+        (e.get("title") or "").strip().lower(),
+    )
 
 
 def _merge_calendar_payloads(
@@ -229,6 +259,10 @@ def _merge_calendar_payloads(
     with its source account, sorted by (date, time) across accounts),
     and the names of accounts whose fetch returned None so the brief
     can mark itself partial.
+
+    Cross-account duplicates (same event present on a calendar both
+    accounts can see) are collapsed to the first occurrence so a shared
+    event doesn't phantom-conflict with itself in `_detect_conflicts`.
     """
     today_events: list[dict] = []
     week_events: list[dict] = []
@@ -241,9 +275,23 @@ def _merge_calendar_payloads(
             today_events.append(_enrich_event(e, today, account=name))
         for e in payload.get("week_events", []) or []:
             week_events.append(_enrich_event(e, today, account=name))
+    today_events = _dedup_preserve_order(today_events)
+    week_events = _dedup_preserve_order(week_events)
     today_events.sort(key=_event_sort_key)
     week_events.sort(key=_event_sort_key)
     return today_events, week_events, failed
+
+
+def _dedup_preserve_order(events: list[dict]) -> list[dict]:
+    seen: set[tuple] = set()
+    out: list[dict] = []
+    for e in events:
+        key = _cross_account_dedup_key(e)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(e)
+    return out
 
 
 def _enrich_reminder(r: dict, today: date) -> dict:

@@ -1007,3 +1007,127 @@ class TestConflictDetection:
         mb.main()
         result = json.loads(capsys.readouterr().out)
         assert result["conflicts"] == []
+
+    def test_exact_same_time_window_is_a_conflict(self):
+        """Two events with identical start AND end times — the maximal
+        overlap. Should be flagged."""
+        events = [
+            self._ev("A", 9 * 60, 10 * 60),
+            self._ev("B", 9 * 60, 10 * 60),
+        ]
+        conflicts = mb._detect_conflicts(events)
+        assert len(conflicts) == 1
+        assert conflicts[0]["overlap_start_minutes"] == 9 * 60
+        assert conflicts[0]["overlap_end_minutes"] == 10 * 60
+
+    def test_full_containment_is_a_conflict(self):
+        """B sits entirely inside A — the overlap window is B's full span."""
+        events = [
+            self._ev("Outer", 9 * 60, 11 * 60),
+            self._ev("Inner", 9 * 60 + 30, 10 * 60),
+        ]
+        conflicts = mb._detect_conflicts(events)
+        assert len(conflicts) == 1
+        c = conflicts[0]
+        assert c["overlap_start_minutes"] == 9 * 60 + 30
+        assert c["overlap_end_minutes"] == 10 * 60
+
+    def test_one_minute_overlap_is_a_conflict(self):
+        """Any positive overlap counts. The brief surfaces it; the user
+        decides if it's worth caring about."""
+        events = [
+            self._ev("A", 9 * 60, 10 * 60 + 1),  # 09:00 - 10:01
+            self._ev("B", 10 * 60, 11 * 60),     # 10:00 - 11:00
+        ]
+        conflicts = mb._detect_conflicts(events)
+        assert len(conflicts) == 1
+        c = conflicts[0]
+        assert c["overlap_end_minutes"] - c["overlap_start_minutes"] == 1
+
+    def test_conflict_view_includes_location_and_event_id(self):
+        """_conflict_event_view should carry location (so the agent can say
+        'you're in two places') and event_id (so the agent can dedupe
+        across multiple briefing renders)."""
+        events = [
+            {**self._ev("Standup", 9 * 60, 10 * 60),
+             "location": "Zoom", "event_id": "ev-1"},
+            {**self._ev("Dentist", 9 * 60 + 30, 10 * 60 + 30),
+             "location": "1500 Main", "event_id": "ev-2"},
+        ]
+        conflicts = mb._detect_conflicts(events)
+        assert conflicts[0]["event_a"]["location"] == "Zoom"
+        assert conflicts[0]["event_a"]["event_id"] == "ev-1"
+        assert conflicts[0]["event_b"]["location"] == "1500 Main"
+        assert conflicts[0]["event_b"]["event_id"] == "ev-2"
+
+
+class TestCrossAccountDedup:
+    """A shared event visible to both linked accounts (e.g. a family
+    calendar both adults can see) must be deduped at merge time — it's
+    one event, not a cross-account conflict with itself."""
+
+    def _shared_event(self, account, *, event_id="shared-ev-1", title="Family Dinner"):
+        # Raw shape mirrors calendar_fetch's normalize_event output for an
+        # event surfaced on multiple accounts via a shared calendar.
+        return {
+            "title": title,
+            "date": "2026-04-09",
+            "time": "7:00 PM",
+            "end_time": "8:00 PM",
+            "start_minutes": 19 * 60,
+            "end_minutes": 20 * 60,
+            "is_all_day": False,
+            "location": "Home",
+            "description": "",
+            "calendar": "Family",
+            "event_id": event_id,
+            "calendar_id": "family-cal",
+            "access_role": "reader",
+            "is_opaque": False,
+        }
+
+    def test_shared_event_deduped_by_event_id(self):
+        per_account = {
+            "primary": {
+                "today_events": [self._shared_event("primary")],
+                "week_events": [],
+            },
+            "personal": {
+                "today_events": [self._shared_event("personal")],  # same id
+                "week_events": [],
+            },
+        }
+        today_events, _, _ = mb._merge_calendar_payloads(per_account, date(2026, 4, 9))
+        assert len(today_events) == 1, (
+            f"shared event was not deduped; brief would emit a phantom "
+            f"cross-account conflict. Got: {today_events}"
+        )
+
+    def test_shared_event_deduped_falls_back_to_shape_when_no_event_id(self):
+        """If event_id is missing (older payloads, some sync edge cases),
+        dedup falls back to (date, start, end, title)."""
+        a = self._shared_event("primary", event_id="")
+        b = self._shared_event("personal", event_id="")
+        per_account = {
+            "primary": {"today_events": [a], "week_events": []},
+            "personal": {"today_events": [b], "week_events": []},
+        }
+        today_events, _, _ = mb._merge_calendar_payloads(per_account, date(2026, 4, 9))
+        assert len(today_events) == 1
+
+    def test_different_events_with_same_shape_not_deduped_when_ids_differ(self):
+        """Two genuinely different events that happen to share a time slot
+        AND a title (rare but possible) must NOT be deduped when their
+        event_ids are distinct — that's a real conflict, not a duplicate."""
+        per_account = {
+            "primary": {
+                "today_events": [self._shared_event("primary", event_id="ev-a")],
+                "week_events": [],
+            },
+            "personal": {
+                "today_events": [self._shared_event("personal", event_id="ev-b")],
+                "week_events": [],
+            },
+        }
+        today_events, _, _ = mb._merge_calendar_payloads(per_account, date(2026, 4, 9))
+        assert len(today_events) == 2
