@@ -30,8 +30,22 @@ import gogcli
 from google_auth import DEFAULT_ACCOUNT, has_google_token, load_google_credentials, require_scopes
 
 LOCAL_TZ = ZoneInfo("America/New_York")
-SKIP_CALENDARS = {"Birthdays", "Holidays in United States"}
+# Default denylist of low-signal/noise calendars. Most users want them out of
+# the brief by default; can be overridden in PR2's brief_preferences.yaml.
+SKIP_CALENDARS = {
+    "Birthdays",
+    "Holidays in United States",
+    "Phases of the Moon",
+    "Week Numbers",
+}
 CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar"
+
+# Google access roles that give us only free/busy visibility — title comes
+# back as literal "Busy", no description / attendees / location. We pass these
+# events through tagged so downstream code (briefing inference, conflict
+# detection) can reason about *when* the user is blocked without claiming
+# to know what for.
+OPAQUE_ACCESS_ROLES = {"freeBusyReader"}
 
 
 def get_access_token(account: str) -> str:
@@ -43,14 +57,24 @@ def get_access_token(account: str) -> str:
 
 
 def list_calendars(token: str) -> list[dict]:
-    """Return [{'id', 'summary'}] for non-skipped calendars."""
+    """Return [{'id', 'summary', 'access_role'}] for non-skipped calendars.
+
+    access_role comes straight from Google's calendarList API and tells us
+    what we can see in each calendar. The two we care about distinguishing
+    are `freeBusyReader` (only "Busy" blocks, no titles) vs everything else
+    (reader/writer/owner — full event details).
+    """
     data = gogcli.run(token, "calendar", "calendars")
     out = []
     for c in data.get("calendars", []):
         summary = c.get("summary") or c.get("id", "")
         if summary in SKIP_CALENDARS:
             continue
-        out.append({"id": c["id"], "summary": summary})
+        out.append({
+            "id": c["id"],
+            "summary": summary,
+            "access_role": c.get("accessRole") or c.get("access_role") or "reader",
+        })
     return out
 
 
@@ -59,7 +83,7 @@ def fetch_events(token: str, days: int, calendars: list[dict]) -> list[dict]:
     if not calendars:
         return []
     cal_ids = ",".join(c["id"] for c in calendars)
-    name_by_id = {c["id"]: c["summary"] for c in calendars}
+    meta_by_id = {c["id"]: c for c in calendars}
     data = gogcli.run(
         token, "calendar", "events",
         f"--calendars={cal_ids}",
@@ -67,11 +91,12 @@ def fetch_events(token: str, days: int, calendars: list[dict]) -> list[dict]:
         "--all-pages",
         "--max=50",
     )
-    return [normalize_event(e, name_by_id) for e in data.get("events", [])]
+    return [normalize_event(e, meta_by_id) for e in data.get("events", [])]
 
 
-def normalize_event(raw: dict, name_by_id: dict[str, str]) -> dict:
-    """Map a gogcli event into Homer's existing calendar-event shape."""
+def normalize_event(raw: dict, meta_by_id: dict[str, dict]) -> dict:
+    """Map a gogcli event into Homer's existing calendar-event shape, with
+    access_role + is_opaque tags carried through from the parent calendar."""
     start = raw.get("start", {})
     if "dateTime" in start:
         start_dt = datetime.fromisoformat(start["dateTime"]).astimezone(LOCAL_TZ)
@@ -83,16 +108,25 @@ def normalize_event(raw: dict, name_by_id: dict[str, str]) -> dict:
         time_str = "all-day"
         is_all_day = True
     cal_id = raw.get("CalendarID", "")
+    cal_meta = meta_by_id.get(cal_id, {})
+    access_role = cal_meta.get("access_role", "reader")
+    title = raw.get("summary", "(no title)")
+    # An event is opaque (no title visible) if either:
+    #   - the parent calendar grants only free/busy access, or
+    #   - the title is the literal "Busy" Google substitutes for restricted shares
+    is_opaque = access_role in OPAQUE_ACCESS_ROLES or title == "Busy"
     return {
-        "title": raw.get("summary", "(no title)"),
+        "title": title,
         "date": event_date,
         "time": time_str,
         "is_all_day": is_all_day,
         "location": raw.get("location", ""),
         "description": (raw.get("description") or "")[:300].strip(),
-        "calendar": name_by_id.get(cal_id, cal_id),
+        "calendar": cal_meta.get("summary", cal_id),
         "event_id": raw.get("id", ""),
         "calendar_id": cal_id,
+        "access_role": access_role,
+        "is_opaque": is_opaque,
     }
 
 
