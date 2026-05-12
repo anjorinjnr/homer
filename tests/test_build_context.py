@@ -610,14 +610,14 @@ def test_merge_heartbeat_preserves_agentic_tasks():
         "Schedule: 2027-06-01 08:00\n"
         "Recur: every 1 month\n"
         "Recipients: primary:whatsapp\n"
-        "Goal: Read Kemi's math log and summarize\n"
+        "Goal: Read Maya's math log and summarize\n"
         "Added: 2027-05-01\n\n"
         "## Completed\n\n"
     )
     result = bc.merge_heartbeat(template, live)
     assert "Type: agentic" in result
     assert "Generate math report" in result
-    assert "Goal: Read Kemi's math log and summarize" in result
+    assert "Goal: Read Maya's math log and summarize" in result
     # System tasks still present
     assert "Gmail scan" in result
 

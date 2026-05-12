@@ -24,12 +24,12 @@ import google_auth
 
 def test_normalize_full_shape():
     payload = {"contacts": [
-        {"resource": "people/c123", "name": "Kemi Johnson",
-         "email": "kemi@example.com", "phone": "+15551234"},
+        {"resource": "people/c123", "name": "Maya Johnson",
+         "email": "maya@example.com", "phone": "+15551234"},
     ]}
     assert cs.normalize(payload) == [{
-        "name": "Kemi Johnson",
-        "emails": ["kemi@example.com"],
+        "name": "Maya Johnson",
+        "emails": ["maya@example.com"],
         "phones": ["+15551234"],
         "resource_name": "people/c123",
     }]
@@ -138,15 +138,15 @@ def test_main_happy_path(capsys, monkeypatch):
     monkeypatch.setattr(cs, "get_access_token", lambda a: "tok")
     monkeypatch.setattr(gogcli, "run",
         lambda token, *args: {"contacts": [
-            {"resource": "people/c1", "name": "Kemi", "email": "kemi@example.com"},
+            {"resource": "people/c1", "name": "Maya", "email": "maya@example.com"},
         ]},
     )
-    monkeypatch.setattr(sys, "argv", ["contacts_search.py", "--query", "kemi"])
+    monkeypatch.setattr(sys, "argv", ["contacts_search.py", "--query", "maya"])
     cs.main()
     out = json.loads(capsys.readouterr().out)
     assert out == [{
-        "name": "Kemi",
-        "emails": ["kemi@example.com"],
+        "name": "Maya",
+        "emails": ["maya@example.com"],
         "phones": [],
         "resource_name": "people/c1",
     }]

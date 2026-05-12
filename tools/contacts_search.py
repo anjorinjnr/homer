@@ -7,7 +7,7 @@ and passes the access token to gogcli per call. gogcli does the API call.
 
 Usage:
     python tools/contacts_search.py --query "smith"
-    python tools/contacts_search.py --query "kemi" --limit 3
+    python tools/contacts_search.py --query "maya" --limit 3
     python tools/contacts_search.py --query "x" --account personal
 
 Output (JSON array):

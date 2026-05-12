@@ -29,9 +29,9 @@ def _days_from_now(n: int) -> str:
     return (datetime.now(timezone.utc) + timedelta(days=n)).strftime("%Y-%m-%d")
 
 
-def _add_kemi():
+def _add_maya():
     return hr.add_member(
-        name="Kemi",
+        name="Maya",
         dob="2021-07-12",
         blood_type="O+",
         allergies="peanuts,shellfish",
@@ -46,25 +46,25 @@ def _add_kemi():
 
 class TestFamilyMembers:
     def test_add_member(self):
-        result = _add_kemi()
+        result = _add_maya()
         assert result["status"] == "ok"
-        assert "Kemi" in result["message"]
+        assert "Maya" in result["message"]
 
     def test_add_duplicate_member(self):
-        _add_kemi()
-        result = hr.add_member(name="Kemi")
+        _add_maya()
+        result = hr.add_member(name="Maya")
         assert "error" in result
         assert "already exists" in result["error"]
 
     def test_list_members(self):
-        _add_kemi()
+        _add_maya()
         hr.add_member(name="Alex", dob="1990-01-01")
         result = hr.list_members()
         assert result["status"] == "ok"
         assert len(result["members"]) == 2
         names = [m["name"] for m in result["members"]]
         assert "Alex" in names
-        assert "Kemi" in names
+        assert "Maya" in names
 
     def test_list_members_empty(self):
         result = hr.list_members()
@@ -72,42 +72,42 @@ class TestFamilyMembers:
         assert result["members"] == []
 
     def test_get_member(self):
-        _add_kemi()
-        result = hr.get_member("Kemi")
+        _add_maya()
+        result = hr.get_member("Maya")
         assert result["status"] == "ok"
-        assert result["member"]["name"] == "Kemi"
+        assert result["member"]["name"] == "Maya"
         assert result["member"]["blood_type"] == "O+"
         assert result["active_medications"] == []
         assert result["recent_visits"] == []
         assert result["upcoming_vaccinations"] == []
 
     def test_get_member_partial_match(self):
-        _add_kemi()
-        result = hr.get_member("kem")
+        _add_maya()
+        result = hr.get_member("may")
         assert result["status"] == "ok"
-        assert result["member"]["name"] == "Kemi"
+        assert result["member"]["name"] == "Maya"
 
     def test_get_member_case_insensitive(self):
-        _add_kemi()
-        result = hr.get_member("KEMI")
+        _add_maya()
+        result = hr.get_member("MAYA")
         assert result["status"] == "ok"
-        assert result["member"]["name"] == "Kemi"
+        assert result["member"]["name"] == "Maya"
 
     def test_get_member_not_found(self):
         result = hr.get_member("Nobody")
         assert "error" in result
 
     def test_update_member(self):
-        _add_kemi()
-        result = hr.update_member("Kemi", doctor="Dr. Jones", allergies="peanuts")
+        _add_maya()
+        result = hr.update_member("Maya", doctor="Dr. Jones", allergies="peanuts")
         assert result["status"] == "ok"
-        updated = hr.get_member("Kemi")
+        updated = hr.get_member("Maya")
         assert updated["member"]["primary_doctor"] == "Dr. Jones"
         assert updated["member"]["allergies"] == "peanuts"
 
     def test_update_member_no_fields(self):
-        _add_kemi()
-        result = hr.update_member("Kemi")
+        _add_maya()
+        result = hr.update_member("Maya")
         assert "error" in result
         assert "No fields" in result["error"]
 
@@ -116,28 +116,28 @@ class TestFamilyMembers:
         assert "error" in result
 
     def test_remove_member(self):
-        _add_kemi()
-        result = hr.remove_member("Kemi")
+        _add_maya()
+        result = hr.remove_member("Maya")
         assert result["status"] == "ok"
         assert hr.list_members()["members"] == []
 
     def test_remove_member_cascades(self):
         """Removing a member should delete all associated records."""
-        _add_kemi()
-        hr.log_visit("Kemi", "2026-03-15", "Dr. Smith", visit_type="checkup")
-        hr.log_vaccine("Kemi", "Flu", "2026-10-01")
-        hr.add_medication("Kemi", "Amoxicillin", dosage="250mg")
-        hr.log_symptom("Kemi", "fever")
+        _add_maya()
+        hr.log_visit("Maya", "2026-03-15", "Dr. Smith", visit_type="checkup")
+        hr.log_vaccine("Maya", "Flu", "2026-10-01")
+        hr.add_medication("Maya", "Amoxicillin", dosage="250mg")
+        hr.log_symptom("Maya", "fever")
 
-        hr.remove_member("Kemi")
+        hr.remove_member("Maya")
         assert hr.list_members()["members"] == []
 
         # Verify no orphaned records by re-adding and checking
-        _add_kemi()
-        assert hr.list_visits("Kemi")["visits"] == []
-        assert hr.list_vaccines("Kemi")["vaccinations"] == []
-        assert hr.list_medications("Kemi")["medications"] == []
-        assert hr.list_symptoms("Kemi")["symptoms"] == []
+        _add_maya()
+        assert hr.list_visits("Maya")["visits"] == []
+        assert hr.list_vaccines("Maya")["vaccinations"] == []
+        assert hr.list_medications("Maya")["medications"] == []
+        assert hr.list_symptoms("Maya")["symptoms"] == []
 
     def test_remove_member_not_found(self):
         result = hr.remove_member("Ghost")
@@ -150,14 +150,14 @@ class TestFamilyMembers:
 
 class TestMedicalVisits:
     def test_log_visit(self):
-        _add_kemi()
-        result = hr.log_visit("Kemi", "2026-03-15", "Dr. Smith", visit_type="checkup")
+        _add_maya()
+        result = hr.log_visit("Maya", "2026-03-15", "Dr. Smith", visit_type="checkup")
         assert result["status"] == "ok"
 
     def test_log_visit_with_all_fields(self):
-        _add_kemi()
+        _add_maya()
         result = hr.log_visit(
-            "Kemi", "2026-03-15", "Dr. Smith",
+            "Maya", "2026-03-15", "Dr. Smith",
             visit_type="checkup",
             diagnosis="healthy",
             treatment="none",
@@ -167,56 +167,56 @@ class TestMedicalVisits:
         assert result["status"] == "ok"
 
     def test_list_visits(self):
-        _add_kemi()
-        hr.log_visit("Kemi", "2026-01-15", "Dr. Smith", visit_type="checkup")
-        hr.log_visit("Kemi", "2026-03-15", "Dr. Jones", visit_type="sick")
-        result = hr.list_visits("Kemi")
+        _add_maya()
+        hr.log_visit("Maya", "2026-01-15", "Dr. Smith", visit_type="checkup")
+        hr.log_visit("Maya", "2026-03-15", "Dr. Jones", visit_type="sick")
+        result = hr.list_visits("Maya")
         assert len(result["visits"]) == 2
         # Should be ordered by date descending
         assert result["visits"][0]["visit_date"] == "2026-03-15"
 
     def test_list_visits_filter_year(self):
-        _add_kemi()
-        hr.log_visit("Kemi", "2025-06-01", "Dr. Smith")
-        hr.log_visit("Kemi", "2026-03-15", "Dr. Smith")
-        result = hr.list_visits("Kemi", year=2026)
+        _add_maya()
+        hr.log_visit("Maya", "2025-06-01", "Dr. Smith")
+        hr.log_visit("Maya", "2026-03-15", "Dr. Smith")
+        result = hr.list_visits("Maya", year=2026)
         assert len(result["visits"]) == 1
 
     def test_list_visits_filter_type(self):
-        _add_kemi()
-        hr.log_visit("Kemi", "2026-01-15", "Dr. Smith", visit_type="checkup")
-        hr.log_visit("Kemi", "2026-03-15", "Dr. Jones", visit_type="sick")
-        result = hr.list_visits("Kemi", visit_type="checkup")
+        _add_maya()
+        hr.log_visit("Maya", "2026-01-15", "Dr. Smith", visit_type="checkup")
+        hr.log_visit("Maya", "2026-03-15", "Dr. Jones", visit_type="sick")
+        result = hr.list_visits("Maya", visit_type="checkup")
         assert len(result["visits"]) == 1
         assert result["visits"][0]["visit_type"] == "checkup"
 
     def test_upcoming_visits(self):
-        _add_kemi()
+        _add_maya()
         future = _days_from_now(10)
-        hr.log_visit("Kemi", "2026-01-15", "Dr. Smith", follow_up=future)
+        hr.log_visit("Maya", "2026-01-15", "Dr. Smith", follow_up=future)
         result = hr.upcoming_visits()
         assert len(result["upcoming"]) == 1
-        assert result["upcoming"][0]["member_name"] == "Kemi"
+        assert result["upcoming"][0]["member_name"] == "Maya"
 
     def test_upcoming_visits_excludes_past(self):
-        _add_kemi()
+        _add_maya()
         past = _days_from_now(-5)
-        hr.log_visit("Kemi", "2026-01-15", "Dr. Smith", follow_up=past)
+        hr.log_visit("Maya", "2026-01-15", "Dr. Smith", follow_up=past)
         result = hr.upcoming_visits()
         assert len(result["upcoming"]) == 0
 
     def test_upcoming_visits_excludes_far_future(self):
-        _add_kemi()
+        _add_maya()
         far = _days_from_now(60)
-        hr.log_visit("Kemi", "2026-01-15", "Dr. Smith", follow_up=far)
+        hr.log_visit("Maya", "2026-01-15", "Dr. Smith", follow_up=far)
         result = hr.upcoming_visits()
         assert len(result["upcoming"]) == 0
 
     def test_get_member_shows_recent_visits(self):
-        _add_kemi()
+        _add_maya()
         for i in range(7):
-            hr.log_visit("Kemi", f"2026-0{i+1}-15", "Dr. Smith")
-        result = hr.get_member("Kemi")
+            hr.log_visit("Maya", f"2026-0{i+1}-15", "Dr. Smith")
+        result = hr.get_member("Maya")
         assert len(result["recent_visits"]) == 5  # limited to 5
 
 
@@ -226,51 +226,51 @@ class TestMedicalVisits:
 
 class TestVaccinations:
     def test_log_vaccine(self):
-        _add_kemi()
-        result = hr.log_vaccine("Kemi", "Flu", "2026-10-01", provider="CVS")
+        _add_maya()
+        result = hr.log_vaccine("Maya", "Flu", "2026-10-01", provider="CVS")
         assert result["status"] == "ok"
 
     def test_list_vaccines(self):
-        _add_kemi()
-        hr.log_vaccine("Kemi", "Flu", "2026-10-01")
-        hr.log_vaccine("Kemi", "DTaP", "2025-06-01")
-        result = hr.list_vaccines("Kemi")
+        _add_maya()
+        hr.log_vaccine("Maya", "Flu", "2026-10-01")
+        hr.log_vaccine("Maya", "DTaP", "2025-06-01")
+        result = hr.list_vaccines("Maya")
         assert len(result["vaccinations"]) == 2
 
     def test_due_vaccines_includes_overdue(self):
-        _add_kemi()
+        _add_maya()
         past = _days_from_now(-30)
-        hr.log_vaccine("Kemi", "Flu", "2025-10-01", next_due=past)
+        hr.log_vaccine("Maya", "Flu", "2025-10-01", next_due=past)
         result = hr.due_vaccines()
         assert len(result["due_vaccines"]) == 1
-        assert result["due_vaccines"][0]["member_name"] == "Kemi"
+        assert result["due_vaccines"][0]["member_name"] == "Maya"
 
     def test_due_vaccines_includes_today(self):
-        _add_kemi()
-        hr.log_vaccine("Kemi", "Flu", "2025-10-01", next_due=_today())
+        _add_maya()
+        hr.log_vaccine("Maya", "Flu", "2025-10-01", next_due=_today())
         result = hr.due_vaccines()
         assert len(result["due_vaccines"]) == 1
 
     def test_due_vaccines_excludes_future(self):
-        _add_kemi()
+        _add_maya()
         future = _days_from_now(30)
-        hr.log_vaccine("Kemi", "Flu", "2025-10-01", next_due=future)
+        hr.log_vaccine("Maya", "Flu", "2025-10-01", next_due=future)
         result = hr.due_vaccines()
         assert len(result["due_vaccines"]) == 0
 
     def test_due_vaccines_excludes_no_next_due(self):
-        _add_kemi()
-        hr.log_vaccine("Kemi", "Flu", "2025-10-01")
+        _add_maya()
+        hr.log_vaccine("Maya", "Flu", "2025-10-01")
         result = hr.due_vaccines()
         assert len(result["due_vaccines"]) == 0
 
     def test_get_member_shows_upcoming_vaccinations(self):
-        _add_kemi()
+        _add_maya()
         future = _days_from_now(10)
-        hr.log_vaccine("Kemi", "Flu", "2025-10-01", next_due=future)
+        hr.log_vaccine("Maya", "Flu", "2025-10-01", next_due=future)
         past = _days_from_now(-10)
-        hr.log_vaccine("Kemi", "DTaP", "2024-01-01", next_due=past)
-        result = hr.get_member("Kemi")
+        hr.log_vaccine("Maya", "DTaP", "2024-01-01", next_due=past)
+        result = hr.get_member("Maya")
         # Only future next_due shown in upcoming_vaccinations
         assert len(result["upcoming_vaccinations"]) == 1
         assert result["upcoming_vaccinations"][0]["vaccine_name"] == "Flu"
@@ -282,36 +282,36 @@ class TestVaccinations:
 
 class TestMedications:
     def test_add_medication(self):
-        _add_kemi()
-        result = hr.add_medication("Kemi", "Amoxicillin", dosage="250mg", frequency="twice daily")
+        _add_maya()
+        result = hr.add_medication("Maya", "Amoxicillin", dosage="250mg", frequency="twice daily")
         assert result["status"] == "ok"
 
     def test_list_medications(self):
-        _add_kemi()
-        hr.add_medication("Kemi", "Amoxicillin")
-        hr.add_medication("Kemi", "Ibuprofen")
-        result = hr.list_medications("Kemi")
+        _add_maya()
+        hr.add_medication("Maya", "Amoxicillin")
+        hr.add_medication("Maya", "Ibuprofen")
+        result = hr.list_medications("Maya")
         assert len(result["medications"]) == 2
 
     def test_list_medications_active_only(self):
-        _add_kemi()
-        hr.add_medication("Kemi", "Amoxicillin")
-        hr.add_medication("Kemi", "Ibuprofen")
+        _add_maya()
+        hr.add_medication("Maya", "Amoxicillin")
+        hr.add_medication("Maya", "Ibuprofen")
         # Deactivate one
-        meds = hr.list_medications("Kemi")
+        meds = hr.list_medications("Maya")
         med_id = meds["medications"][0]["medication_id"]
         hr.update_medication(med_id, active=0)
-        result = hr.list_medications("Kemi", active_only=True)
+        result = hr.list_medications("Maya", active_only=True)
         assert len(result["medications"]) == 1
 
     def test_update_medication(self):
-        _add_kemi()
-        hr.add_medication("Kemi", "Amoxicillin", refill_date="2026-04-01")
-        meds = hr.list_medications("Kemi")
+        _add_maya()
+        hr.add_medication("Maya", "Amoxicillin", refill_date="2026-04-01")
+        meds = hr.list_medications("Maya")
         med_id = meds["medications"][0]["medication_id"]
         result = hr.update_medication(med_id, refill_date="2026-05-01", dosage="500mg")
         assert result["status"] == "ok"
-        updated = hr.list_medications("Kemi")
+        updated = hr.list_medications("Maya")
         assert updated["medications"][0]["refill_date"] == "2026-05-01"
         assert updated["medications"][0]["dosage"] == "500mg"
 
@@ -320,53 +320,53 @@ class TestMedications:
         assert "error" in result
 
     def test_update_medication_no_fields(self):
-        _add_kemi()
-        hr.add_medication("Kemi", "Amoxicillin")
-        meds = hr.list_medications("Kemi")
+        _add_maya()
+        hr.add_medication("Maya", "Amoxicillin")
+        meds = hr.list_medications("Maya")
         med_id = meds["medications"][0]["medication_id"]
         result = hr.update_medication(med_id)
         assert "error" in result
         assert "No fields" in result["error"]
 
     def test_due_refills_within_7_days(self):
-        _add_kemi()
+        _add_maya()
         soon = _days_from_now(3)
-        hr.add_medication("Kemi", "Amoxicillin", refill_date=soon)
+        hr.add_medication("Maya", "Amoxicillin", refill_date=soon)
         result = hr.due_refills()
         assert len(result["due_refills"]) == 1
 
     def test_due_refills_past_due(self):
-        _add_kemi()
+        _add_maya()
         past = _days_from_now(-5)
-        hr.add_medication("Kemi", "Amoxicillin", refill_date=past)
+        hr.add_medication("Maya", "Amoxicillin", refill_date=past)
         result = hr.due_refills()
         assert len(result["due_refills"]) == 1
-        assert result["due_refills"][0]["member_name"] == "Kemi"
+        assert result["due_refills"][0]["member_name"] == "Maya"
 
     def test_due_refills_excludes_inactive(self):
-        _add_kemi()
+        _add_maya()
         soon = _days_from_now(3)
-        hr.add_medication("Kemi", "Amoxicillin", refill_date=soon)
-        meds = hr.list_medications("Kemi")
+        hr.add_medication("Maya", "Amoxicillin", refill_date=soon)
+        meds = hr.list_medications("Maya")
         hr.update_medication(meds["medications"][0]["medication_id"], active=0)
         result = hr.due_refills()
         assert len(result["due_refills"]) == 0
 
     def test_due_refills_excludes_far_future(self):
-        _add_kemi()
+        _add_maya()
         far = _days_from_now(30)
-        hr.add_medication("Kemi", "Amoxicillin", refill_date=far)
+        hr.add_medication("Maya", "Amoxicillin", refill_date=far)
         result = hr.due_refills()
         assert len(result["due_refills"]) == 0
 
     def test_get_member_shows_active_medications(self):
-        _add_kemi()
-        hr.add_medication("Kemi", "Amoxicillin")
-        hr.add_medication("Kemi", "Ibuprofen")
+        _add_maya()
+        hr.add_medication("Maya", "Amoxicillin")
+        hr.add_medication("Maya", "Ibuprofen")
         # Deactivate one
-        meds = hr.list_medications("Kemi")
+        meds = hr.list_medications("Maya")
         hr.update_medication(meds["medications"][0]["medication_id"], active=0)
-        result = hr.get_member("Kemi")
+        result = hr.get_member("Maya")
         assert len(result["active_medications"]) == 1
 
 
@@ -376,23 +376,23 @@ class TestMedications:
 
 class TestSymptomLog:
     def test_log_symptom(self):
-        _add_kemi()
-        result = hr.log_symptom("Kemi", "fever, cough", severity=6, temperature=101.2)
+        _add_maya()
+        result = hr.log_symptom("Maya", "fever, cough", severity=6, temperature=101.2)
         assert result["status"] == "ok"
 
     def test_list_symptoms(self):
-        _add_kemi()
-        hr.log_symptom("Kemi", "fever")
-        hr.log_symptom("Kemi", "cough")
-        result = hr.list_symptoms("Kemi")
+        _add_maya()
+        hr.log_symptom("Maya", "fever")
+        hr.log_symptom("Maya", "cough")
+        result = hr.list_symptoms("Maya")
         assert len(result["symptoms"]) == 2
 
     def test_list_symptoms_respects_days(self):
-        _add_kemi()
-        hr.log_symptom("Kemi", "fever")
+        _add_maya()
+        hr.log_symptom("Maya", "fever")
         # Insert an old symptom directly
         conn = hr.get_conn()
-        member = hr._resolve_member(conn, "Kemi")
+        member = hr._resolve_member(conn, "Maya")
         old_date = (datetime.now(timezone.utc) - timedelta(days=60)).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         )
@@ -403,7 +403,7 @@ class TestSymptomLog:
         conn.commit()
         conn.close()
 
-        result = hr.list_symptoms("Kemi", days=30)
+        result = hr.list_symptoms("Maya", days=30)
         assert len(result["symptoms"]) == 1
         assert result["symptoms"][0]["symptoms"] == "fever"
 
@@ -429,23 +429,23 @@ class TestDashboard:
         assert result["recent_symptoms"] == []
 
     def test_dashboard_aggregates(self):
-        _add_kemi()
+        _add_maya()
         hr.add_member(name="Alex")
 
-        # Upcoming visit for Kemi
+        # Upcoming visit for Maya
         future = _days_from_now(10)
-        hr.log_visit("Kemi", "2026-01-15", "Dr. Smith", follow_up=future)
+        hr.log_visit("Maya", "2026-01-15", "Dr. Smith", follow_up=future)
 
         # Due vaccine for Alex
         past = _days_from_now(-5)
         hr.log_vaccine("Alex", "Flu", "2025-10-01", next_due=past)
 
-        # Due refill for Kemi
+        # Due refill for Maya
         soon = _days_from_now(3)
-        hr.add_medication("Kemi", "Amoxicillin", refill_date=soon)
+        hr.add_medication("Maya", "Amoxicillin", refill_date=soon)
 
-        # Recent symptom for Kemi
-        hr.log_symptom("Kemi", "fever")
+        # Recent symptom for Maya
+        hr.log_symptom("Maya", "fever")
 
         result = hr.dashboard()
         assert len(result["upcoming_visits"]) == 1
@@ -454,29 +454,29 @@ class TestDashboard:
         assert len(result["recent_symptoms"]) == 1
 
     def test_dashboard_filtered_by_member(self):
-        _add_kemi()
+        _add_maya()
         hr.add_member(name="Alex")
 
         # Data for both
-        hr.log_symptom("Kemi", "fever")
+        hr.log_symptom("Maya", "fever")
         hr.log_symptom("Alex", "headache")
 
-        result = hr.dashboard(member_name="Kemi")
+        result = hr.dashboard(member_name="Maya")
         assert result["status"] == "ok"
         assert len(result["recent_symptoms"]) == 1
-        assert result["recent_symptoms"][0]["member_name"] == "Kemi"
+        assert result["recent_symptoms"][0]["member_name"] == "Maya"
 
     def test_dashboard_member_not_found(self):
         result = hr.dashboard(member_name="Ghost")
         assert "error" in result
 
     def test_dashboard_recent_symptoms_only_7_days(self):
-        _add_kemi()
-        hr.log_symptom("Kemi", "fever")
+        _add_maya()
+        hr.log_symptom("Maya", "fever")
 
         # Insert an old symptom
         conn = hr.get_conn()
-        member = hr._resolve_member(conn, "Kemi")
+        member = hr._resolve_member(conn, "Maya")
         old_date = (datetime.now(timezone.utc) - timedelta(days=10)).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         )
@@ -511,11 +511,11 @@ class TestEdgeCases:
         assert member["member"]["blood_type"] is None
 
     def test_multiple_members_different_records(self):
-        _add_kemi()
+        _add_maya()
         hr.add_member(name="Alex")
-        hr.log_visit("Kemi", "2026-03-15", "Dr. Smith")
+        hr.log_visit("Maya", "2026-03-15", "Dr. Smith")
         hr.log_visit("Alex", "2026-03-16", "Dr. Jones")
-        assert len(hr.list_visits("Kemi")["visits"]) == 1
+        assert len(hr.list_visits("Maya")["visits"]) == 1
         assert len(hr.list_visits("Alex")["visits"]) == 1
 
     def test_ambiguous_partial_name_raises(self):
@@ -537,8 +537,8 @@ class TestEdgeCases:
 
     def test_exact_match_preferred_over_partial(self):
         """Exact name match should be preferred even if partial also matches others."""
-        hr.add_member(name="Kemi")
+        hr.add_member(name="Maya")
         hr.add_member(name="Olamide")
-        result = hr.get_member("Kemi")
+        result = hr.get_member("Maya")
         assert result["status"] == "ok"
-        assert result["member"]["name"] == "Kemi"
+        assert result["member"]["name"] == "Maya"

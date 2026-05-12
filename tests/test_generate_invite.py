@@ -24,10 +24,10 @@ def isolated_env(tmp_path, monkeypatch):
 @pytest.fixture()
 def event(isolated_env):
     """Create a test event with details."""
-    edir = isolated_env / "events" / "kemi_bday"
+    edir = isolated_env / "events" / "maya_bday"
     edir.mkdir()
     (edir / "status.md").write_text("""\
-# Kemi's 5th Birthday Party
+# Maya's 5th Birthday Party
 Status: Coordinating
 Dates: July 12, 2026
 Created: 2026-03-31
@@ -49,22 +49,22 @@ Created: 2026-03-31
 | Date | What |
 |------|------|
 """)
-    return "kemi_bday"
+    return "maya_bday"
 
 
 # ── read_event_details ───────────────────────────────────────────────────────
 
 class TestReadEventDetails:
     def test_reads_title(self, event, isolated_env):
-        details = gi.read_event_details("kemi_bday")
-        assert details["title"] == "Kemi's 5th Birthday Party"
+        details = gi.read_event_details("maya_bday")
+        assert details["title"] == "Maya's 5th Birthday Party"
 
     def test_reads_dates(self, event):
-        details = gi.read_event_details("kemi_bday")
+        details = gi.read_event_details("maya_bday")
         assert details["date"] == "July 12, 2026"
 
     def test_reads_confirmed_details(self, event):
-        details = gi.read_event_details("kemi_bday")
+        details = gi.read_event_details("maya_bday")
         assert details["location"] == "123 Pool Lane, Anytown ST"
         assert details["time"] == "2:00 – 5:00 PM"
 
@@ -83,8 +83,8 @@ class TestReadEventDetails:
 
 class TestBuildPrompt:
     def test_includes_title(self):
-        prompt = gi.build_prompt(title="Kemi's Birthday")
-        assert "Kemi's Birthday" in prompt
+        prompt = gi.build_prompt(title="Maya's Birthday")
+        assert "Maya's Birthday" in prompt
 
     def test_includes_all_details(self):
         prompt = gi.build_prompt(
@@ -184,9 +184,9 @@ class TestGenerateImage:
 
 class TestSaveImage:
     def test_saves_png(self, isolated_env):
-        path = gi.save_image(b"fake_png", "kemi_bday", "image/png")
+        path = gi.save_image(b"fake_png", "maya_bday", "image/png")
         assert path.exists()
-        assert path.name == "kemi_bday_invite.png"
+        assert path.name == "maya_bday_invite.png"
         assert path.read_bytes() == b"fake_png"
 
     def test_saves_jpeg(self, isolated_env):
@@ -227,11 +227,11 @@ class TestMain:
 
     def test_generate_from_event(self, event, monkeypatch, capsys, isolated_env):
         self._mock_generate(monkeypatch)
-        monkeypatch.setattr("sys.argv", ["generate_invite.py", "--event-id", "kemi_bday"])
+        monkeypatch.setattr("sys.argv", ["generate_invite.py", "--event-id", "maya_bday"])
         gi.main()
         out = json.loads(capsys.readouterr().out)
         assert out["status"] == "ok"
-        assert "kemi_bday_invite.png" in out["image_path"]
+        assert "maya_bday_invite.png" in out["image_path"]
         assert Path(out["image_path"]).exists()
 
     def test_generate_from_args(self, monkeypatch, capsys, isolated_env):
@@ -258,7 +258,7 @@ class TestMain:
 
         monkeypatch.setattr(gi, "generate_image", mock_gen)
         monkeypatch.setattr("sys.argv", [
-            "generate_invite.py", "--event-id", "kemi_bday",
+            "generate_invite.py", "--event-id", "maya_bday",
             "--model", "gemini-3-pro-image-preview",
         ])
         gi.main()
@@ -267,7 +267,7 @@ class TestMain:
     def test_api_failure_returns_error(self, event, monkeypatch, capsys):
         monkeypatch.setattr(gi, "generate_image",
                             MagicMock(side_effect=RuntimeError("API down")))
-        monkeypatch.setattr("sys.argv", ["generate_invite.py", "--event-id", "kemi_bday"])
+        monkeypatch.setattr("sys.argv", ["generate_invite.py", "--event-id", "maya_bday"])
         with pytest.raises(SystemExit):
             gi.main()
         out = json.loads(capsys.readouterr().out)
@@ -283,7 +283,7 @@ class TestMain:
 
         monkeypatch.setattr(gi, "generate_image", mock_gen)
         monkeypatch.setattr("sys.argv", [
-            "generate_invite.py", "--event-id", "kemi_bday",
+            "generate_invite.py", "--event-id", "maya_bday",
             "--title", "Custom Title", "--location", "Custom Location",
         ])
         gi.main()

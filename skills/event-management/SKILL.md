@@ -48,7 +48,7 @@ Homer can plan and coordinate events with guests. Event metadata, open items, an
 
 # Update event details (dates, location, lodging, or any confirmed detail):
 {HOMER_VENV} {HOMER_TOOLS}/event_manage.py --update --event-id mtb_colorado --field dates --value "2026-07-15 to 2026-07-20"
-{HOMER_VENV} {HOMER_TOOLS}/event_manage.py --update --event-id kemi_bday --field dates --value "Saturday, May 2, 2026"
+{HOMER_VENV} {HOMER_TOOLS}/event_manage.py --update --event-id maya_bday --field dates --value "Saturday, May 2, 2026"
 {HOMER_VENV} {HOMER_TOOLS}/event_manage.py --update --event-id mtb_colorado --field "Location" --value "Crested Butte, CO"
 {HOMER_VENV} {HOMER_TOOLS}/event_manage.py --update --event-id mtb_colorado --field "Lodging" --value "Airbnb booked, confirmation #ABC123"
 
@@ -161,13 +161,13 @@ When the owner says "add [name] to the trip":
 ## generate_invite.py
 ```
 # Generate invite image from event details (reads status.md):
-{HOMER_VENV} {HOMER_TOOLS}/generate_invite.py --event-id kemi_bday
+{HOMER_VENV} {HOMER_TOOLS}/generate_invite.py --event-id maya_bday
 
 # With custom style:
-{HOMER_VENV} {HOMER_TOOLS}/generate_invite.py --event-id kemi_bday --style "watercolor, purple theme, festive"
+{HOMER_VENV} {HOMER_TOOLS}/generate_invite.py --event-id maya_bday --style "watercolor, purple theme, festive"
 
 # Higher quality model:
-{HOMER_VENV} {HOMER_TOOLS}/generate_invite.py --event-id kemi_bday --model gemini-3-pro-image-preview
+{HOMER_VENV} {HOMER_TOOLS}/generate_invite.py --event-id maya_bday --model gemini-3-pro-image-preview
 
 # With explicit details (overrides status.md):
 {HOMER_VENV} {HOMER_TOOLS}/generate_invite.py --event-id alex_bday --title "Alex's 5th Birthday!" \
@@ -219,10 +219,10 @@ I'll ping Mike again tomorrow if he hasn't responded."
 
 ### Creating and sending invites
 User: "Create an invite for Alex's birthday party"
-Homer: *runs generate_invite.py --event-id kemi_bday*
+Homer: *runs generate_invite.py --event-id maya_bday*
 Homer: "Here's the invite I created for Alex's birthday! [sends image] Want me to make any changes before I send it to the guests?"
 User: "Make it more colorful and add some balloons"
-Homer: *runs generate_invite.py --event-id kemi_bday --style "more colorful, add balloons, festive"*
+Homer: *runs generate_invite.py --event-id maya_bday --style "more colorful, add balloons, festive"*
 Homer: "How about this version? [sends updated image]"
 User: "Perfect, send it to everyone"
 Homer: *sends image + caption to each enrolled guest via message tool, then marks each as invited*

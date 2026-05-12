@@ -127,8 +127,8 @@ ask" rule does NOT apply. Pick a short label and confirm in one turn —
 don't make them type slash-commands or guess what name to use.
 
 1. Infer a label from context if obvious — `work`, `personal`, `school`,
-   or the person's first name when it's a household member ("Kemi's
-   email" → `kemi`). Lowercase, ASCII, no spaces.
+   or the person's first name when it's a household member ("Maya's
+   email" → `maya`). Lowercase, ASCII, no spaces.
 2. State the label inline and surface the link in the same reply:
    ```bash
    {HOMER_VENV} {HOMER_TOOLS}/link_account.py --account <label>

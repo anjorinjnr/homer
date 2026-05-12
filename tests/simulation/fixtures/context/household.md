@@ -27,11 +27,11 @@
 
 | Name | Gender | DOB | School / Status |
 |------|--------|-----|-----------------|
-| Kemi Johnson | Girl | September 12, 2020 | Bright Horizons Montessori — Kindergarten |
+| Maya Johnson | Girl | September 12, 2020 | Bright Horizons Montessori — Kindergarten |
 | Tobi Johnson | Boy | January 8, 2024 | Home with nanny |
 
 ### Extended Family
-- Aunt Yemi
+- Aunt Yvonne
 - Role: Aunt
 - Phone: 555-099-4321
 

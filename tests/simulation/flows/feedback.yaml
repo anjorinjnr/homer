@@ -10,7 +10,7 @@ model: "gemini/gemini-3-pro-preview"
 #   2. Confirm category, capture the message in the user's words
 #   3. Ask about conversation share for bug/feature, SKIP for kudos
 #   4. Exec feedback_submit.py with the right flags
-#   5. NOT trigger on household-internal statements ("Kemi was grumpy")
+#   5. NOT trigger on household-internal statements ("Maya was grumpy")
 #
 # We mock feedback_submit.py so the eval doesn't hit GitHub. The mock returns
 # the same JSON shape the real tool emits on success.
@@ -109,7 +109,7 @@ beats:
 
   # ── Beat 4 — household statement should NOT trigger /feedback ───────────────
   - actor: alex
-    message: "Kemi was grumpy today, I think she's tired from school"
+    message: "Maya was grumpy today, I think she's tired from school"
     expect:
       tool_sequence_forbidden:
         - pattern: "feedback_submit\\.py"

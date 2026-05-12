@@ -7,7 +7,7 @@ scopes the current sender isn't a participant in. **No fallback** to the
 global ``active_scopes.json``: an unscoped sender (or a heartbeat tick with
 no resolved sender) gets an empty list and is refused. The earlier fallback
 defeated the gate on prod — Adam (LID 38457841848414, no scope) was able
-to read kemi_5th_bday because the global list contained every active scope.
+to read maya_5th_bday because the global list contained every active scope.
 
 Gate is triggered by ``HOMER_GUEST_WORKSPACE``; main-agent invocations leave
 it unset and are not gated.

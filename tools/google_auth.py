@@ -14,7 +14,7 @@ Ad-hoc accounts can be registered with any name the user chooses.
 Usage:
     python tools/google_auth.py                       # auth primary (default)
     python tools/google_auth.py --account homer       # auth Homer's own email
-    python tools/google_auth.py --account kemi        # auth an ad-hoc account
+    python tools/google_auth.py --account maya        # auth an ad-hoc account
 
 Requires:
     secrets/google_credentials.json  — OAuth client credentials from GCP

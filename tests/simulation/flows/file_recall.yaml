@@ -9,7 +9,7 @@ beats:
   # Beat 1: Sam tells Homer to start logging music practice
   - actor: seun_home
     message: >
-      Hey Homer, I want to start tracking Kemi's music practice. She's been
+      Hey Homer, I want to start tracking Maya's music practice. She's been
       practicing piano — she had 3 sessions this week. Monday she did 30 minutes
       of scales and Twinkle Twinkle Little Star, Wednesday was 20 minutes just
       scales, and today she did 25 minutes and started learning Mary Had a Little
@@ -23,7 +23,7 @@ beats:
   - actor: alex
     new_session: true
     message: >
-      Hey Homer, how is Kemi's music practice going? How many times has she
+      Hey Homer, how is Maya's music practice going? How many times has she
       practiced and what has she been working on?
     expect:
       keywords: ["Twinkle", "scales"]

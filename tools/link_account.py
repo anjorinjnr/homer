@@ -7,7 +7,7 @@ a Google account via the portal's OAuth flow.
 
 Usage:
     python tools/link_account.py                     # primary (default)
-    python tools/link_account.py --account kemi      # named secondary
+    python tools/link_account.py --account maya      # named secondary
 
 Output (JSON):
     {"url": "https://<portal>/dashboard/connections?link=primary", "account": "primary"}

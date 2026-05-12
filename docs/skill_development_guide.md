@@ -586,12 +586,12 @@ Write messages the way a real household member texts — casual, sometimes incom
 ```yaml
 # Good — sounds like a real person
 message: >
-  Kemi's been coughing since yesterday and had a low fever this morning —
+  Maya's been coughing since yesterday and had a low fever this morning —
   100.4. She's also been a little fussy. Log that please.
 
 # Bad — sounds like a test script
 message: >
-  Please log a symptom for family member Kemi with symptoms "cough, fever"
+  Please log a symptom for family member Maya with symptoms "cough, fever"
   and temperature 100.4.
 ```
 

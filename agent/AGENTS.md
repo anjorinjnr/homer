@@ -105,7 +105,7 @@ Your workspace has a specific layout. Always use the correct subdirectory:
 
 | Directory | Purpose | Examples |
 |-----------|---------|----------|
-| `{HOMER_WORKSPACE}/files/` | Any file you create or maintain for the user | `files/kemi_math_log.md`, `files/trip_research.md`, `files/expense_report.md` |
+| `{HOMER_WORKSPACE}/files/` | Any file you create or maintain for the user | `files/maya_math_log.md`, `files/trip_research.md`, `files/expense_report.md` |
 | `{HOMER_WORKSPACE}/tmp/` | Scratch files for run_code.py (may be auto-cleaned) | `tmp/plot.py`, `tmp/data.csv` |
 | `{HOMER_WORKSPACE}/state/` | Operational state managed by tools — **do not read or modify** | `state/gmail_last_checked.txt`, `state/drive_index.json` |
 
@@ -114,7 +114,7 @@ Your workspace has a specific layout. Always use the correct subdirectory:
 - When you need a throwaway script or temp data → write it to `tmp/`
 - Never write files directly to the workspace root — only system files live there (SOUL.md, AGENTS.md, USER.md, etc.)
 - When the user asks to see or find a file you previously created, look in `files/` first
-- **File recall rule:** After creating or updating a persistent file in `files/`, save a note to your memory describing: (1) the filename, (2) what it tracks, and (3) what questions should trigger you to reference it. This lets you find the right file later without scanning the entire directory. Example: after creating `files/kemi_music_practice_log.md`, save to memory: "kemi_music_practice_log.md — Kemi's music practice sessions (instrument, duration, notes). Reference for: practice count, progress, practice history, music lessons."
+- **File recall rule:** After creating or updating a persistent file in `files/`, save a note to your memory describing: (1) the filename, (2) what it tracks, and (3) what questions should trigger you to reference it. This lets you find the right file later without scanning the entire directory. Example: after creating `files/maya_music_practice_log.md`, save to memory: "maya_music_practice_log.md — Maya's music practice sessions (instrument, duration, notes). Reference for: practice count, progress, practice history, music lessons."
 
 ## Tool Reference
 
@@ -571,7 +571,7 @@ Always pass `--recipients` when adding a task. Use the current message's channel
 
 **Per-task model selection:** When creating reminder tasks (simple messages that just need to be sent), set `--model flash25` to use the cheapest/fastest model. System tasks that run tools and compose content (morning briefing, gmail scan, balance check) should also use `--model flash25` unless they need complex reasoning. Agentic tasks use the agent's default model (no `--model` needed) — only override if the user requests a specific model. Available presets: flash25, flash, pro, sonnet, haiku.
 
-**Agentic tasks:** When a user asks for something that requires tool use on a schedule (e.g., "generate and send me Kemi's math report every month", "research weekend activities every Friday"), create it as an agentic task with `--type agentic`. Use `--goal` for detailed instructions if the description alone isn't enough context. The description should be a short title; the goal field carries the full instructions.
+**Agentic tasks:** When a user asks for something that requires tool use on a schedule (e.g., "generate and send me Maya's math report every month", "research weekend activities every Friday"), create it as an agentic task with `--type agentic`. Use `--goal` for detailed instructions if the description alone isn't enough context. The description should be a short title; the goal field carries the full instructions.
 
 **Reminder vs agentic — quick test:** if the description starts with an action verb that implies *Homer doing work* ("Generate", "Compile", "Send", "Update", "Research", "Pull", "Check in on", "Run the report"), it's almost always agentic — set `--type agentic --goal "..."`. Plain reminders read like things the *user* should do ("Pick up dry cleaning", "Call HVAC", "Renew passport"). Mis-typed agentic tasks leak into the morning briefing as nag text instead of running silently.
 
@@ -613,7 +613,7 @@ until Friday" → create two tasks: "Remind: bla (12pm)" and "Remind: bla (6pm)"
 {HOMER_VENV} {HOMER_TOOLS}/tasks_update.py --add --desc "Remind: take vitamins" --schedule "2026-04-01 09:00" --recipients "<chat_id>:whatsapp" --model flash
 
 # Agentic task — uses tools/skills to accomplish a goal during heartbeat:
-{HOMER_VENV} {HOMER_TOOLS}/tasks_update.py --add --type agentic --desc "Generate Kemi's monthly math report" --goal "Read Kemi's math practice log, summarize progress, and send the report" --schedule "2026-05-01 08:00" --recur "every 1 month" --recipients "<chat_id>:whatsapp"
+{HOMER_VENV} {HOMER_TOOLS}/tasks_update.py --add --type agentic --desc "Generate Maya's monthly math report" --goal "Read Maya's math practice log, summarize progress, and send the report" --schedule "2026-05-01 08:00" --recur "every 1 month" --recipients "<chat_id>:whatsapp"
 
 # Agentic one-shot — no recurrence:
 {HOMER_VENV} {HOMER_TOOLS}/tasks_update.py --add --type agentic --desc "Research weekend activities in our area" --schedule "2026-04-18 08:00" --recipients "<chat_id>:whatsapp"
@@ -657,8 +657,8 @@ For each task whose Schedule has passed:
   morning_briefing.py already filters out: system/agentic tasks, tasks with a `goal` field, reminders scheduled for today (they fire on heartbeat at their own time), and reminders more than 5 days out. Trust its `reminders` array — do not re-add filtered tasks from your own knowledge of HEARTBEAT.md.
 
   **Sections (always in this order, omit empty sections):**
-  - Today — [Day, Date]: each today_event as `display_time` + title (e.g. "2pm — Kemi swim class"), or "Nothing scheduled"
-  - This week: up to 5 week_events as `display_date` + title (e.g. "Tomorrow — Kemi karate", "Wed Apr 22 — HVAC visit")
+  - Today — [Day, Date]: each today_event as `display_time` + title (e.g. "2pm — Maya swim class"), or "Nothing scheduled"
+  - This week: up to 5 week_events as `display_date` + title (e.g. "Tomorrow — Maya karate", "Wed Apr 22 — HVAC visit")
   - Action items: each as * subject — action (`display_urgency`) (e.g. "(this week)", "(today)", "(low priority)")
   - Reminders: each as * description (`display_when`) (e.g. "9am Today", "12pm Tomorrow", "3pm Thu Apr 24")
 

@@ -1,11 +1,11 @@
 name: "RSVP Webpage — Personal Guest Links"
 event_id: "sim_rsvp_personal"
-event_name: "Kemi's 5th Birthday"
+event_name: "Maya's 5th Birthday"
 model: "gemini/gemini-3-pro-preview"
 
 setup:
   - tool: event_manage
-    args: ["--create", "--name", "Kemi's 5th Birthday", "--event-id", "sim_rsvp_personal"]
+    args: ["--create", "--name", "Maya's 5th Birthday", "--event-id", "sim_rsvp_personal"]
 
   - tool: event_manage
     args: ["--update", "--event-id", "sim_rsvp_personal", "--field", "dates", "--value", "Saturday, July 12, 2026 — 2:00 to 5:00 PM"]
@@ -24,10 +24,10 @@ beats:
 
   - actor: alex
     message: >
-      Set up an RSVP page for Kemi's birthday. Ask about dietary restrictions
+      Set up an RSVP page for Maya's birthday. Ask about dietary restrictions
       (None, Vegetarian, Halal), number of kids, and number of adults.
       Set the deadline to July 5. The description should say
-      "Join us to celebrate Kemi's 5th Birthday at Fun Spot America!"
+      "Join us to celebrate Maya's 5th Birthday at Fun Spot America!"
     expect:
       tools_used: ["exec"]
       tool_sequence:

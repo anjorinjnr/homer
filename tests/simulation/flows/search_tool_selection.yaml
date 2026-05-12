@@ -12,7 +12,7 @@ mock_tools:
   # Gmail search — dentist
   - pattern: "(?i)gmail_search\\.py.*dentist"
     response: |
-      [{"id": "msg_dentist_001", "thread_id": "thread_dentist_001", "subject": "Appointment Confirmation - Johnson Family", "from": "office@anytown-smiles.example", "date": "2026-04-01 14:00 UTC", "body": "This confirms your appointment for Kemi Johnson on April 15 at 2:30 PM. Please arrive 10 minutes early. - Anytown Smiles Dental"}]
+      [{"id": "msg_dentist_001", "thread_id": "thread_dentist_001", "subject": "Appointment Confirmation - Johnson Family", "from": "office@anytown-smiles.example", "date": "2026-04-01 14:00 UTC", "body": "This confirms your appointment for Maya Johnson on April 15 at 2:30 PM. Please arrive 10 minutes early. - Anytown Smiles Dental"}]
 
   # Gmail search — plumber
   - pattern: "(?i)gmail_search\\.py.*plumb"
@@ -114,7 +114,7 @@ beats:
 
   - actor: alex
     message: >
-      When is Kemi's dentist appointment? I think we got a confirmation email.
+      When is Maya's dentist appointment? I think we got a confirmation email.
     expect:
       tools_used: ["exec"]
       tool_sequence:

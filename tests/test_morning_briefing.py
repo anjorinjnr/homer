@@ -81,7 +81,7 @@ SAMPLE_EMAILS = [
 ]
 SAMPLE_TASKS = [
     {"description": "Gmail scan", "type": "system", "schedule": "2026-04-10 09:00", "recipients": "primary:whatsapp"},
-    {"description": "Generate Kemi's weekly math plan", "type": "agentic", "schedule": "2026-04-10 09:00", "recipients": "primary:whatsapp"},
+    {"description": "Generate Maya's weekly math plan", "type": "agentic", "schedule": "2026-04-10 09:00", "recipients": "primary:whatsapp"},
     {"description": "Call dentist", "type": "", "schedule": "2026-04-10 14:00", "recipients": "primary:whatsapp"},
     {"description": "Pick up groceries", "type": "", "schedule": "2026-04-10", "recipients": "primary:whatsapp,sam:whatsapp"},
 ]
@@ -214,7 +214,7 @@ class TestMainOutput:
         descriptions = [r["description"] for r in result["reminders"]]
         assert descriptions == ["Call dentist", "Pick up groceries"]
         assert "Gmail scan" not in descriptions
-        assert "Generate Kemi's weekly math plan" not in descriptions
+        assert "Generate Maya's weekly math plan" not in descriptions
 
     def test_reminders_empty_on_failure(self, monkeypatch, capsys):
         result = self._run_main(monkeypatch, capsys,
@@ -317,24 +317,24 @@ class _FrozenDatetimeApr9(_real_datetime):
 
 # Tasks that should be EXCLUDED from the morning briefing
 _AGENTIC_NO_TYPE = {
-    "description": "Update Kemi's daily math reminder",
+    "description": "Update Maya's daily math reminder",
     "type": "",  # missing Type: agentic — the actual bug
     "schedule": "2026-04-20 09:00",
-    "goal": "Update the recurring daily math reminder for Kemi based on the latest plan.",
+    "goal": "Update the recurring daily math reminder for Maya based on the latest plan.",
     "recipients": "primary:whatsapp",
 }
 _AGENTIC_TYPED = {
-    "description": "Generate Kemi's weekly math plan",
+    "description": "Generate Maya's weekly math plan",
     "type": "agentic",
     "schedule": "2026-04-20 09:00",
-    "goal": "Generate a weekly math practice plan for Kemi.",
+    "goal": "Generate a weekly math practice plan for Maya.",
     "recipients": "primary:whatsapp",
 }
 _AGENTIC_MONTHLY_REPORT = {
-    "description": "Kemi's monthly math report",
+    "description": "Maya's monthly math report",
     "type": "agentic",
     "schedule": "2026-04-20 09:00",
-    "goal": "Compile and send Kemi's monthly math progress report.",
+    "goal": "Compile and send Maya's monthly math progress report.",
     "recipients": "primary:whatsapp",
 }
 _FAR_FUTURE_9_DAYS = {
@@ -353,7 +353,7 @@ _FAR_FUTURE_MONTHS = {
 # Tasks that should be EXCLUDED — reminder fires at its schedule today, no need
 # to surface it in the brief (heartbeat will deliver it as its own message).
 _REMINDER_TODAY = {
-    "description": "Call dentist to schedule Kemi's checkup",
+    "description": "Call dentist to schedule Maya's checkup",
     "type": "",
     "schedule": "2026-04-20 10:00",
     "recipients": "primary:whatsapp",
@@ -416,18 +416,18 @@ class TestReminderFiltering:
         """Core regression: goal-field task with type='' must be filtered out."""
         result = self._run(monkeypatch, capsys, [_AGENTIC_NO_TYPE, _REMINDER_4_DAYS])
         descs = [r["description"] for r in result["reminders"]]
-        assert "Update Kemi's daily math reminder" not in descs
+        assert "Update Maya's daily math reminder" not in descs
         assert "Pick up dry cleaning" in descs
 
     def test_typed_agentic_excluded(self, monkeypatch, capsys):
         result = self._run(monkeypatch, capsys, [_AGENTIC_TYPED, _REMINDER_4_DAYS])
         descs = [r["description"] for r in result["reminders"]]
-        assert "Generate Kemi's weekly math plan" not in descs
+        assert "Generate Maya's weekly math plan" not in descs
 
     def test_monthly_report_agentic_excluded(self, monkeypatch, capsys):
         result = self._run(monkeypatch, capsys, [_AGENTIC_MONTHLY_REPORT, _REMINDER_4_DAYS])
         descs = [r["description"] for r in result["reminders"]]
-        assert "Kemi's monthly math report" not in descs
+        assert "Maya's monthly math report" not in descs
 
     def test_chase_csv_too_far_out_excluded(self, monkeypatch, capsys):
         """Chase CSV 9 days out must not appear."""
@@ -446,7 +446,7 @@ class TestReminderFiltering:
         at their own schedule, so duplicating in the brief is noise."""
         result = self._run(monkeypatch, capsys, [_REMINDER_TODAY, _REMINDER_4_DAYS])
         descs = [r["description"] for r in result["reminders"]]
-        assert "Call dentist to schedule Kemi's checkup" not in descs
+        assert "Call dentist to schedule Maya's checkup" not in descs
         assert "Pick up dry cleaning" in descs
 
     def test_reminder_past_due_excluded(self, monkeypatch, capsys):
@@ -489,13 +489,13 @@ class TestReminderFiltering:
         descs = [r["description"] for r in result["reminders"]]
 
         # None of these should appear
-        assert "Update Kemi's daily math reminder" not in descs
-        assert "Generate Kemi's weekly math plan" not in descs
-        assert "Kemi's monthly math report" not in descs
+        assert "Update Maya's daily math reminder" not in descs
+        assert "Generate Maya's weekly math plan" not in descs
+        assert "Maya's monthly math report" not in descs
         assert "Upload Chase CSV to family docs" not in descs
         assert "Replace upstairs HVAC filter" not in descs
         # Today-scheduled reminder fires on its own — not in brief
-        assert "Call dentist to schedule Kemi's checkup" not in descs
+        assert "Call dentist to schedule Maya's checkup" not in descs
 
         # Only the multi-day-out reminder surfaces
         assert "Pick up dry cleaning" in descs

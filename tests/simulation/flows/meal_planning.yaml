@@ -99,7 +99,7 @@ beats:
 
   - actor: alex
     message: >
-      Also add Kemi's yogurt pouches and some bananas to the grocery list.
+      Also add Maya's yogurt pouches and some bananas to the grocery list.
     expect:
       tools_used: ["exec"]
     note: "Homer should add manual items to the existing grocery list"
@@ -108,7 +108,7 @@ beats:
 
   - actor: alex
     message: >
-      Oh by the way — we made the Chicken Stir Fry last week and Kemi actually
+      Oh by the way — we made the Chicken Stir Fry last week and Maya actually
       loved it. Bump that one to a 5.
     expect:
       tools_used: ["exec"]

@@ -121,7 +121,7 @@ class TestClassifyMessage:
         with patch("tools.analytics.classify._call_gemini", return_value="birthday_planning"):
             cache = _get_cache()
             cache._data.clear()
-            result = classify_message("plan Kemi's 40th")
+            result = classify_message("plan Maya's 40th")
             assert result == "birthday_planning"
 
 

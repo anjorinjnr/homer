@@ -4,7 +4,7 @@ Covers:
   * is_guest_mode() only True when HOMER_GUEST_WORKSPACE is set.
   * sender_scope_ids() reads ONLY current_sender_scopes.json — no fallback
     to the global active_scopes.json (which would defeat the gate for
-    unscoped senders, the prod regression from the Adam/Kemi leak).
+    unscoped senders, the prod regression from the Adam/Maya leak).
   * assert_scope_allowed() refuses scopes not in the per-sender list.
   * assert_event_allowed() refuses event IDs not reachable from the sender's
     scopes via context_source.ref or task_tags.task_id.
@@ -54,14 +54,14 @@ def scope_db(tmp_path, monkeypatch):
         context_source={"type": "event", "ref": "denver_mtb"},
     )
     ss.create_scope(env_a, db)
-    # Scope B: kemi_5th_bday — only Alex; different event
+    # Scope B: maya_5th_bday — only Alex; different event
     env_b = ss.make_minimal_envelope(
-        scope_id="kemi_5th_bday",
+        scope_id="maya_5th_bday",
         name="Alex",
         participant_id="4126920720@s.whatsapp.net",
-        event_id="kemi_5th_bday",
+        event_id="maya_5th_bday",
         principal="alex",
-        context_source={"type": "event", "ref": "kemi_5th_bday"},
+        context_source={"type": "event", "ref": "maya_5th_bday"},
     )
     ss.create_scope(env_b, db)
     return db
@@ -104,13 +104,13 @@ class TestSenderScopeIds:
     def test_reads_current_sender_scopes(self, guest_ws):
         (guest_ws / "current_sender_scopes.json").write_text(json.dumps(["denver_mtb"]))
         # active_scopes.json with cross-scope content must be IGNORED — this
-        # is the regression that let Adam (no scope) read kemi_5th_bday.
-        (guest_ws / "active_scopes.json").write_text(json.dumps(["denver_mtb", "kemi_5th_bday"]))
+        # is the regression that let Adam (no scope) read maya_5th_bday.
+        (guest_ws / "active_scopes.json").write_text(json.dumps(["denver_mtb", "maya_5th_bday"]))
         assert guest_scope_guard.sender_scope_ids() == ["denver_mtb"]
 
     def test_no_fallback_to_active_scopes(self, guest_ws):
         # Only the global file is present — gate must NOT widen to it.
-        (guest_ws / "active_scopes.json").write_text(json.dumps(["denver_mtb", "kemi_5th_bday"]))
+        (guest_ws / "active_scopes.json").write_text(json.dumps(["denver_mtb", "maya_5th_bday"]))
         assert guest_scope_guard.sender_scope_ids() == []
 
     def test_returns_empty_when_per_sender_file_missing(self, guest_ws):
@@ -134,7 +134,7 @@ class TestAssertScopeAllowed:
     def test_rejects_scope_not_in_sender_list(self, guest_ws):
         (guest_ws / "current_sender_scopes.json").write_text(json.dumps(["denver_mtb"]))
         with pytest.raises(SystemExit) as excinfo:
-            guest_scope_guard.assert_scope_allowed("kemi_5th_bday")
+            guest_scope_guard.assert_scope_allowed("maya_5th_bday")
         assert excinfo.value.code == 2
 
     def test_rejects_when_sender_list_empty(self, guest_ws):
@@ -146,17 +146,17 @@ class TestAssertScopeAllowed:
 class TestAssertEventAllowed:
     def test_no_op_outside_guest_mode(self, monkeypatch, scope_db):
         monkeypatch.delenv("HOMER_GUEST_WORKSPACE", raising=False)
-        guest_scope_guard.assert_event_allowed("kemi_5th_bday")
+        guest_scope_guard.assert_event_allowed("maya_5th_bday")
 
     def test_allows_event_matching_sender_scope(self, guest_ws, scope_db):
         (guest_ws / "current_sender_scopes.json").write_text(json.dumps(["denver_mtb"]))
         guest_scope_guard.assert_event_allowed("denver_mtb")
 
     def test_rejects_event_not_in_sender_scopes(self, guest_ws, scope_db):
-        # Adam is in denver_mtb only; kemi_5th_bday is a different scope
+        # Adam is in denver_mtb only; maya_5th_bday is a different scope
         (guest_ws / "current_sender_scopes.json").write_text(json.dumps(["denver_mtb"]))
         with pytest.raises(SystemExit) as excinfo:
-            guest_scope_guard.assert_event_allowed("kemi_5th_bday")
+            guest_scope_guard.assert_event_allowed("maya_5th_bday")
         assert excinfo.value.code == 2
 
     def test_rejects_unknown_event(self, guest_ws, scope_db):
@@ -215,9 +215,9 @@ class TestEventManageGuestMode:
         env["HOMER_SCOPE_DB"] = str(scope_db)
         env["HOMER_EVENTS_DIR"] = str(tmp_path / "events")
         (tmp_path / "events").mkdir()
-        result = self._run(["--status", "--event-id", "kemi_5th_bday"], env)
+        result = self._run(["--status", "--event-id", "maya_5th_bday"], env)
         assert result.returncode != 0, result.stdout + result.stderr
-        assert "kemi_5th_bday" in result.stderr
+        assert "maya_5th_bday" in result.stderr
 
     def test_blocks_list_action_in_guest_mode(self, tmp_path, scope_db):
         ws = tmp_path / "guest_ws"
@@ -241,14 +241,14 @@ class TestEventManageGuestMode:
         ws.mkdir()
         # No current_sender_scopes.json. active_scopes.json contains everything
         # (as build_context.py used to write it pre-fix).
-        (ws / "active_scopes.json").write_text(json.dumps(["denver_mtb", "kemi_5th_bday"]))
+        (ws / "active_scopes.json").write_text(json.dumps(["denver_mtb", "maya_5th_bday"]))
         env = os.environ.copy()
         env["HOMER_GUEST_WORKSPACE"] = str(ws)
         env["HOMER_WORKSPACE"] = str(ws)
         env["HOMER_SCOPE_DB"] = str(scope_db)
         env["HOMER_EVENTS_DIR"] = str(tmp_path / "events")
         (tmp_path / "events").mkdir()
-        result = self._run(["--status", "--event-id", "kemi_5th_bday"], env)
+        result = self._run(["--status", "--event-id", "maya_5th_bday"], env)
         assert result.returncode != 0
         assert "No active scopes" in result.stderr or "not reachable" in result.stderr
 

@@ -1,4 +1,4 @@
-name: "Health Records — Kemi's Checkup & Family Dashboard"
+name: "Health Records — Maya's Checkup & Family Dashboard"
 event_id: "sim_health"
 event_name: "Health Records Simulation"
 model: "gemini/gemini-3-pro-preview"
@@ -11,23 +11,23 @@ setup:
   - tool: health_records
     args: ["--add-member", "--name", "Sam", "--dob", "1989-06-22", "--blood-type", "A+", "--doctor", "Dr. Okafor", "--insurance", "Aetna PPO", "--allergies", "penicillin"]
   - tool: health_records
-    args: ["--add-member", "--name", "Kemi", "--dob", "2021-07-12", "--blood-type", "O+", "--doctor", "Dr. Chen", "--insurance", "Aetna PPO", "--allergies", "none", "--notes", "Pediatrician at Anytown Pediatrics"]
+    args: ["--add-member", "--name", "Maya", "--dob", "2021-07-12", "--blood-type", "O+", "--doctor", "Dr. Chen", "--insurance", "Aetna PPO", "--allergies", "none", "--notes", "Pediatrician at Anytown Pediatrics"]
 
-  # Kemi's vaccination history
+  # Maya's vaccination history
   - tool: health_records
-    args: ["--log-vaccine", "--member", "Kemi", "--vaccine", "DTaP (dose 4)", "--date", "2025-07-12", "--provider", "Dr. Chen"]
+    args: ["--log-vaccine", "--member", "Maya", "--vaccine", "DTaP (dose 4)", "--date", "2025-07-12", "--provider", "Dr. Chen"]
   - tool: health_records
-    args: ["--log-vaccine", "--member", "Kemi", "--vaccine", "Flu 2025", "--date", "2025-10-05", "--provider", "CVS", "--next-due", "2026-10-01"]
+    args: ["--log-vaccine", "--member", "Maya", "--vaccine", "Flu 2025", "--date", "2025-10-05", "--provider", "CVS", "--next-due", "2026-10-01"]
   - tool: health_records
-    args: ["--log-vaccine", "--member", "Kemi", "--vaccine", "MMR (dose 2)", "--date", "2025-07-12", "--provider", "Dr. Chen"]
+    args: ["--log-vaccine", "--member", "Maya", "--vaccine", "MMR (dose 2)", "--date", "2025-07-12", "--provider", "Dr. Chen"]
   - tool: health_records
-    args: ["--log-vaccine", "--member", "Kemi", "--vaccine", "IPV (dose 4)", "--date", "2025-07-12", "--provider", "Dr. Chen"]
+    args: ["--log-vaccine", "--member", "Maya", "--vaccine", "IPV (dose 4)", "--date", "2025-07-12", "--provider", "Dr. Chen"]
 
   # Past visits
   - tool: health_records
-    args: ["--log-visit", "--member", "Kemi", "--date", "2025-07-12", "--provider", "Dr. Chen", "--type", "checkup", "--notes", "4-year well-child visit, all milestones met", "--follow-up", "2026-07-12"]
+    args: ["--log-visit", "--member", "Maya", "--date", "2025-07-12", "--provider", "Dr. Chen", "--type", "checkup", "--notes", "4-year well-child visit, all milestones met", "--follow-up", "2026-07-12"]
   - tool: health_records
-    args: ["--log-visit", "--member", "Kemi", "--date", "2026-01-15", "--provider", "Dr. Chen", "--type", "sick", "--diagnosis", "ear infection", "--treatment", "Amoxicillin 10 days"]
+    args: ["--log-visit", "--member", "Maya", "--date", "2026-01-15", "--provider", "Dr. Chen", "--type", "sick", "--diagnosis", "ear infection", "--treatment", "Amoxicillin 10 days"]
   - tool: health_records
     args: ["--log-visit", "--member", "Alex", "--date", "2026-02-01", "--provider", "Dr. Patel", "--type", "checkup", "--notes", "Annual physical, all good"]
 
@@ -43,15 +43,15 @@ beats:
       Homer, give me the family health dashboard. Who has upcoming
       appointments or things due?
     expect:
-      keywords: ["Kemi"]
+      keywords: ["Maya"]
       tools_used: ["exec"]
-    note: "Homer should run --dashboard and report Kemi's well-child follow-up, Sam's refill, flu shot due date"
+    note: "Homer should run --dashboard and report Maya's well-child follow-up, Sam's refill, flu shot due date"
 
   # --- Phase 2: Log a new visit ---
 
   - actor: alex
     message: >
-      Kemi had her dentist appointment today at Anytown Pediatric Dentistry.
+      Maya had her dentist appointment today at Anytown Pediatric Dentistry.
       Everything looked good, no cavities. Next visit in 6 months.
     expect:
       tools_used: ["exec"]
@@ -61,7 +61,7 @@ beats:
 
   - actor: alex
     message: >
-      Is Kemi up to date on her vaccinations? What's coming up next?
+      Is Maya up to date on her vaccinations? What's coming up next?
     expect:
       keywords: ["Flu"]
       tools_used: ["exec"]
@@ -71,7 +71,7 @@ beats:
 
   - actor: alex
     message: >
-      Kemi's been coughing since yesterday and had a low fever this morning —
+      Maya's been coughing since yesterday and had a low fever this morning —
       100.4. She's also been a little fussy. Log that please.
     expect:
       tools_used: ["exec"]
@@ -89,7 +89,7 @@ beats:
 
   - actor: alex
     message: >
-      Show me Kemi's recent symptoms. She also had that ear infection in
+      Show me Maya's recent symptoms. She also had that ear infection in
       January — is this turning into a pattern? Should I call Dr. Chen?
     expect:
       keywords: ["cough"]
@@ -111,9 +111,9 @@ beats:
 
   - actor: alex
     message: >
-      Pull up Kemi's full medical profile — I need it for the camp
+      Pull up Maya's full medical profile — I need it for the camp
       registration forms.
     expect:
       keywords: ["Dr. Chen", "O+"]
       tools_used: ["exec"]
-    note: "Homer should return Kemi's complete profile with DOB, blood type, allergies, doctor, recent visits"
+    note: "Homer should return Maya's complete profile with DOB, blood type, allergies, doctor, recent visits"

@@ -41,7 +41,7 @@ def test_slugify():
     assert _slugify("Alex") == "alex"
     assert _slugify("Alex Johnson") == "alex_johnson"
     assert _slugify("  Alex  ") == "alex"
-    assert _slugify("Kemi Johnson-Jnr") == "kemi_johnson_jnr"
+    assert _slugify("Maya Johnson-Jnr") == "maya_johnson_jnr"
     # Unicode / apostrophes collapse to a single underscore.
     assert _slugify("O'Brien") == "o_brien"
 

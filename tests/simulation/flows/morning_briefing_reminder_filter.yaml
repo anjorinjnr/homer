@@ -33,11 +33,11 @@ mock_tools:
         "type": "morning_briefing",
         "date": "2026-04-20",
         "today_events": [
-          {"title": "Kemi swim class", "date": "2026-04-20", "time": "2:00 PM", "display_date": "Today", "display_time": "2pm"},
+          {"title": "Maya swim class", "date": "2026-04-20", "time": "2:00 PM", "display_date": "Today", "display_time": "2pm"},
           {"title": "Dentist — Alex", "date": "2026-04-20", "time": "4:30 PM", "display_date": "Today", "display_time": "4:30pm"}
         ],
         "week_events": [
-          {"title": "Kemi karate", "date": "2026-04-21", "time": "4:00 PM", "display_date": "Tomorrow", "display_time": "4pm"}
+          {"title": "Maya karate", "date": "2026-04-21", "time": "4:00 PM", "display_date": "Tomorrow", "display_time": "4pm"}
         ],
         "action_items": [
           {
@@ -119,9 +119,9 @@ beats:
       # The five tasks that were incorrectly surfacing before the fix must never
       # appear in any message sent to the user.
       message_patterns_forbidden:
-        - "(?i)update kemi.*daily math"
-        - "(?i)generate kemi.*weekly math"
-        - "(?i)kemi.*monthly math report"
+        - "(?i)update maya.*daily math"
+        - "(?i)generate maya.*weekly math"
+        - "(?i)maya.*monthly math report"
         - "(?i)upload chase"
         - "(?i)hvac filter"
         # Today-scheduled reminder fires on its own — must not appear in brief

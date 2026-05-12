@@ -639,10 +639,10 @@ def test_format_task_agentic_includes_type_and_goal():
     block = tu.format_task(
         "Generate math report", "2027-06-01 08:00",
         recipients="primary:whatsapp", task_type="agentic",
-        goal="Read Kemi's math practice log, summarize progress, send report",
+        goal="Read Maya's math practice log, summarize progress, send report",
     )
     assert "Type: agentic" in block
-    assert "Goal: Read Kemi's math practice log" in block
+    assert "Goal: Read Maya's math practice log" in block
 
 
 def test_format_task_sanitizes_multiline_goal():
@@ -755,7 +755,7 @@ def test_list_tasks_includes_type_agentic(heartbeat_empty, capsys):
         "Schedule: 2027-06-01 08:00\n"
         "Recur: every 1 month\n"
         "Recipients: primary:whatsapp\n"
-        "Goal: Read Kemi's math log and summarize\n\n"
+        "Goal: Read Maya's math log and summarize\n\n"
         "### Call dentist\n"
         "Schedule: 2026-04-15 14:00\n"
         "Recipients: primary:whatsapp\n\n"
@@ -766,7 +766,7 @@ def test_list_tasks_includes_type_agentic(heartbeat_empty, capsys):
     math = next(t for t in out if t["description"] == "Generate math report")
     dentist = next(t for t in out if t["description"] == "Call dentist")
     assert math["type"] == "agentic"
-    assert math["goal"] == "Read Kemi's math log and summarize"
+    assert math["goal"] == "Read Maya's math log and summarize"
     assert dentist["type"] == ""
     assert dentist["goal"] == ""
 
@@ -781,14 +781,14 @@ def test_tick_agentic_task(heartbeat_empty, capsys):
         "Schedule: 2027-06-01 08:00\n"
         "Recur: every 7 days\n"
         "Recipients: primary:whatsapp\n"
-        "Goal: Read Kemi's math log and summarize\n"
+        "Goal: Read Maya's math log and summarize\n"
         "Added: 2027-05-01\n\n"
         "## Completed\n"
     )
     tu.tick_task("weekly report")
     content = heartbeat_empty.read_text()
     assert "Type: agentic" in content
-    assert "Goal: Read Kemi's math log and summarize" in content
+    assert "Goal: Read Maya's math log and summarize" in content
     assert "Schedule: 2027-06-08 08:00" in content
 
 

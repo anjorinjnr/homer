@@ -209,11 +209,11 @@ class TestAnswer:
 
     def test_answer_group_replaces_section_body(self, isolated_fs):
         ob.cmd_init(register_heartbeat=False)
-        ob.cmd_answer("children", "- Kemi (5)\n- Sam (3)")
+        ob.cmd_answer("children", "- Maya (5)\n- Sam (3)")
         content = (cu.USER_CONTEXT_DIR / "household.md").read_text()
         # The placeholder "(none recorded)" should be gone
         children_body = ob._extract_section_body(content, "Children")
-        assert "Kemi (5)" in children_body
+        assert "Maya (5)" in children_body
         assert "(none recorded)" not in children_body
 
     def test_answer_unknown_field_exits(self, isolated_fs):

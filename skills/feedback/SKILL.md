@@ -19,7 +19,7 @@ Run this skill when the user:
   Homer's behavior (not the household's life)
 - Asks "how do I report bugs?" or "where do I send feedback?"
 
-Do NOT run this skill for household-internal observations ("Kemi is grumpy
+Do NOT run this skill for household-internal observations ("Maya is grumpy
 today") — those belong in `context_updater.py` or are not stored at all.
 
 ## Flow

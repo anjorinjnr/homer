@@ -739,7 +739,7 @@ class TestEscalateAutoScope:
     def test_does_not_fall_back_to_legacy_active_scopes(self, tmp_path, monkeypatch):
         """Prod regression: an unscoped sender with the global active_scopes.json
         present must NOT silently widen to the global list — that's how Adam
-        discovered kemi_5th_bday."""
+        discovered maya_5th_bday."""
         ws = tmp_path / "guest_ws_legacy"
         ws.mkdir()
         (ws / "active_scopes.json").write_text(json.dumps(["rel_legacy"]))

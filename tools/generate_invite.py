@@ -7,9 +7,9 @@ workspace files/ directory. Homer (the LLM) sends it to the owner for approval
 and to guests via the nanobot message tool.
 
 Usage (via Homer exec tool):
-    python tools/generate_invite.py --event-id kemi_bday
-    python tools/generate_invite.py --event-id kemi_bday --style "watercolor, festive"
-    python tools/generate_invite.py --event-id kemi_bday --model gemini-3-pro-image-preview
+    python tools/generate_invite.py --event-id maya_bday
+    python tools/generate_invite.py --event-id maya_bday --style "watercolor, festive"
+    python tools/generate_invite.py --event-id maya_bday --model gemini-3-pro-image-preview
     python tools/generate_invite.py --title "Alex's 5th Birthday" --date "July 12, 2026" \
         --time "2:00 PM" --location "123 Main St" --style "pool party, colorful"
 

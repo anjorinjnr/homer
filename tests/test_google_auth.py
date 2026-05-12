@@ -59,7 +59,7 @@ def test_has_google_token_legacy_fallback_only_for_primary(isolated_token_dirs):
     assert google_auth.has_google_token("primary") is True
     assert google_auth.has_google_token() is True
     assert google_auth.has_google_token("homer") is False
-    assert google_auth.has_google_token("kemi") is False
+    assert google_auth.has_google_token("maya") is False
 
 
 def test_has_google_token_does_not_validate_or_open_pickle(isolated_token_dirs, monkeypatch):

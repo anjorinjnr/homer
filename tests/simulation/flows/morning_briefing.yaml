@@ -29,11 +29,11 @@ mock_tools:
         "type": "morning_briefing",
         "date": "2026-04-20",
         "today_events": [
-          {"title": "Kemi swim class", "date": "2026-04-20", "time": "2:00 PM", "display_date": "Today", "display_time": "2pm"},
+          {"title": "Maya swim class", "date": "2026-04-20", "time": "2:00 PM", "display_date": "Today", "display_time": "2pm"},
           {"title": "Dentist — Alex", "date": "2026-04-20", "time": "4:30 PM", "display_date": "Today", "display_time": "4:30pm"}
         ],
         "week_events": [
-          {"title": "Kemi karate", "date": "2026-04-21", "time": "4:00 PM", "display_date": "Tomorrow", "display_time": "4pm"},
+          {"title": "Maya karate", "date": "2026-04-21", "time": "4:00 PM", "display_date": "Tomorrow", "display_time": "4pm"},
           {"title": "HVAC maintenance visit", "date": "2026-04-22", "time": "10:00 AM", "display_date": "Wed Apr 22", "display_time": "10am"},
           {"title": "Pool cover install", "date": "2026-04-24", "time": "all-day", "display_date": "Fri Apr 24"}
         ],
@@ -46,7 +46,7 @@ mock_tools:
             "display_urgency": "this week"
           },
           {
-            "subject": "Enrollment contract — Kemi",
+            "subject": "Enrollment contract — Maya",
             "sender": "admin@school.example.com",
             "action": "Complete and return",
             "urgency": "today",
@@ -156,7 +156,7 @@ beats:
         - "(?i)hvac filter"
         - "(?i)dry cleaning"
         - "(?i)today"     # relative date
-        - "(?i)tomorrow"  # Kemi karate is Tomorrow
+        - "(?i)tomorrow"  # Maya karate is Tomorrow
       tool_sequence:
         - pattern: "morning_briefing\\.py"
           note: "Must fetch briefing data first"
