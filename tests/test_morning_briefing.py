@@ -822,3 +822,45 @@ class TestMultiAccountFanout:
         )
         titles = [e["title"] for e in result["today_events"]]
         assert titles == ["Holiday", "Standup"]
+
+    def test_empty_payload_account_counted_as_attempted_not_partial(self, monkeypatch, capsys):
+        """An account that returns successfully but has no events today
+        is *successful, just empty* — it should appear in
+        accounts_attempted but NOT in calendar_partial (which is for
+        fetch failures, not empty inboxes / quiet days)."""
+        per_account = {
+            "primary": {"today_events": [{"title": "Standup"}], "week_events": []},
+            "personal": {"today_events": [], "week_events": []},
+        }
+        result = self._run_main_with_accounts(
+            monkeypatch, capsys,
+            account_names=["primary", "personal"],
+            per_account_calendar=per_account,
+        )
+        assert result["accounts_attempted"] == ["primary", "personal"]
+        assert "calendar_partial" not in result
+        assert "calendar_error" not in result
+        # Only primary's event lands; personal contributed nothing but is
+        # NOT marked as failed.
+        assert [e["title"] for e in result["today_events"]] == ["Standup"]
+
+    def test_invalid_account_silently_excluded_by_discovery(self, monkeypatch, capsys):
+        """An account that's linked but whose token is expired-without-refresh
+        is rejected by list_valid_accounts and the brief never tries to
+        fetch from it. The brief shouldn't claim it failed — it was
+        never attempted in the first place."""
+        per_account = {
+            "primary": {"today_events": [{"title": "Standup"}], "week_events": []},
+            # "personal" is in per_account_calendar but NOT in account_names —
+            # discovery rejected it, so the brief never asked for it.
+            "personal": {"today_events": [{"title": "Should not appear"}], "week_events": []},
+        }
+        result = self._run_main_with_accounts(
+            monkeypatch, capsys,
+            account_names=["primary"],  # discovery filtered "personal" out
+            per_account_calendar=per_account,
+        )
+        # Single-account run, no fan-out summary, no partial marker.
+        assert "accounts_attempted" not in result
+        assert "calendar_partial" not in result
+        assert [e["title"] for e in result["today_events"]] == ["Standup"]
