@@ -115,7 +115,7 @@ class TestMainOutput:
         # gather_briefing now fans out across discovered accounts. The default
         # set is the primary account so existing tests keep their single-source
         # shape; multi-account fan-out has its own dedicated tests.
-        monkeypatch.setattr(mb, "_valid_account_names", lambda: ["primary"])
+        monkeypatch.setattr(mb.accounts, "list_valid_accounts", lambda: ["primary"])
         def mock_run_tool(script, extra_args=None):
             if "calendar_fetch" in script:
                 return calendar_data
@@ -655,8 +655,8 @@ class TestLogMotivation:
 class TestMultiAccountFanout:
     """The brief fans out across every linked Google account whose token is
     valid, merges results, and tags each event with its source account.
-    Tests stub _valid_account_names and the calendar fetch helper so
-    discovery + subprocess details stay out of the assertion surface."""
+    Tests stub accounts.list_valid_accounts and the calendar fetch helper
+    so discovery + subprocess details stay out of the assertion surface."""
 
     def _run_main_with_accounts(self, monkeypatch, capsys, *,
                                 account_names: list[str],
@@ -664,7 +664,7 @@ class TestMultiAccountFanout:
                                 cli_account: str | None = None):
         monkeypatch.setattr(mb, "datetime", _FrozenDatetimeApr9)
         monkeypatch.setattr(mb, "has_google_token", lambda *a, **kw: True)
-        monkeypatch.setattr(mb, "_valid_account_names", lambda: account_names)
+        monkeypatch.setattr(mb.accounts, "list_valid_accounts", lambda: account_names)
         monkeypatch.setattr(
             mb,
             "_fetch_calendar_for",

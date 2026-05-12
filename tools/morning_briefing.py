@@ -126,28 +126,22 @@ def _enrich_event(e: dict, today: date, account: str | None = None) -> dict:
     return out
 
 
-def _valid_account_names() -> list[str]:
-    """Names of all linked Google accounts whose tokens are usable. Drops
-    accounts with unreadable or expired-non-refreshable tokens so a single
-    stale account doesn't break the whole brief."""
-    return [
-        name for name in accounts._discover_account_names()
-        if accounts._account_metadata(name).get("valid")
-    ]
-
-
 def _fetch_calendar_for(account: str) -> dict | None:
-    """Run calendar_fetch.py for one account. Returns its parsed JSON or
-    None if the subprocess failed."""
-    return run_tool("calendar_fetch.py", ["--account", account])  # type: ignore[return-value]
+    """Run calendar_fetch.py for one account. Returns its parsed JSON
+    payload or None on subprocess/parse failure."""
+    result = run_tool("calendar_fetch.py", ["--account", account])
+    return result if isinstance(result, dict) else None
 
 
-def _merge_calendar_payloads(per_account: dict[str, dict | None]) -> tuple[list, list, list[str]]:
-    """Combine multiple calendar_fetch payloads into one (today, week, failed).
+def _merge_calendar_payloads(
+    per_account: dict[str, dict | None],
+    today: date,
+) -> tuple[list, list, list[str]]:
+    """Combine multi-account calendar_fetch payloads into enriched lists.
 
-    Events from each account are stamped with an ``account`` field. Returns
-    the merged today_events, week_events, and the list of accounts that
-    failed to fetch so the brief can mark itself partial.
+    Returns the merged today_events, week_events (each event enriched and
+    stamped with its source account), and the names of accounts whose
+    fetch returned None so the brief can mark itself partial.
     """
     today_events: list[dict] = []
     week_events: list[dict] = []
@@ -157,9 +151,9 @@ def _merge_calendar_payloads(per_account: dict[str, dict | None]) -> tuple[list,
             failed.append(name)
             continue
         for e in payload.get("today_events", []) or []:
-            today_events.append({**e, "account": name})
+            today_events.append(_enrich_event(e, today, account=name))
         for e in payload.get("week_events", []) or []:
-            week_events.append({**e, "account": name})
+            week_events.append(_enrich_event(e, today, account=name))
     return today_events, week_events, failed
 
 
@@ -241,9 +235,13 @@ def gather_briefing(account: str | None = None) -> dict:
     """
     from concurrent.futures import ThreadPoolExecutor
 
-    cal_accounts = [account] if account else _valid_account_names()
+    cal_accounts = [account] if account else accounts.list_valid_accounts()
+    today = datetime.now(LOCAL_TZ).date()
 
-    with ThreadPoolExecutor(max_workers=max(3, len(cal_accounts))) as pool:
+    # Cap pool size so a pathological token store with dozens of stale
+    # entries can't spawn dozens of concurrent google-api subprocesses.
+    pool_size = min(8, max(3, len(cal_accounts) + 2))
+    with ThreadPoolExecutor(max_workers=pool_size) as pool:
         cal_futures = {name: pool.submit(_fetch_calendar_for, name) for name in cal_accounts}
         actions_future = pool.submit(run_tool, "email_action_items.py", ["--list"])
         tasks_future = pool.submit(run_tool, "tasks_update.py", ["--list"])
@@ -252,10 +250,8 @@ def gather_briefing(account: str | None = None) -> dict:
     action_items_data = actions_future.result()
     tasks_data = tasks_future.result()
 
-    today_events_raw, week_events_raw, failed_accounts = _merge_calendar_payloads(per_account_calendar)
+    today_events, week_events, failed_accounts = _merge_calendar_payloads(per_account_calendar, today)
     multi_account = len(cal_accounts) > 1
-
-    today = datetime.now(LOCAL_TZ).date()
 
     # Only plain user reminders belong in the briefing:
     # - Exclude system/agentic tasks (Homer's own scheduled work)
@@ -287,8 +283,8 @@ def gather_briefing(account: str | None = None) -> dict:
     briefing: dict = {
         "type": "morning_briefing",
         "date": today.isoformat(),
-        "today_events": [_enrich_event(e, today, e.get("account")) for e in today_events_raw],
-        "week_events": [_enrich_event(e, today, e.get("account")) for e in week_events_raw],
+        "today_events": today_events,
+        "week_events": week_events,
         "action_items": action_items,
         "reminders": reminders,
         "users": load_users(),

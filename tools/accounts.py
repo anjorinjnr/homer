@@ -29,6 +29,16 @@ sys.path.insert(0, str(Path(__file__).parent))
 from google_auth import LEGACY_TOKEN, SCOPES, TOKENS_DIR, resolve_token_path
 
 
+def list_valid_accounts() -> list[str]:
+    """Public discovery for callers that need the names of usable accounts.
+
+    Returns linked accounts whose token is valid (not expired, or expired
+    but refreshable). Stale/broken accounts are dropped so a single bad
+    token can't break a downstream fan-out (briefing, digest, etc.).
+    """
+    return [n for n in _discover_account_names() if _account_metadata(n).get("valid")]
+
+
 def _discover_account_names() -> list[str]:
     """Return the set of account names that have a token on disk.
 
