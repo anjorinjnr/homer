@@ -658,17 +658,19 @@ For each task whose Schedule has passed:
 
   **Sections (always in this order, omit empty sections):**
   - ⚠️ Conflicts: one bullet per entry in the briefing's `conflicts` array. If `conflicts` is empty, omit the section entirely (do not say "no conflicts" — it's noise on a normal day).
-  - Today — [Day, Date]: each today_event as `display_time` + title (e.g. "2pm — Kemi swim class"), or "Nothing scheduled"
-  - This week: up to 5 week_events as `display_date` + title (e.g. "Tomorrow — Kemi karate", "Wed Apr 22 — HVAC visit")
+  - Today — [Day, Date]: each today_event as `display_time` + title (e.g. "2pm — Kemi swim class"), or "Nothing scheduled". **SKIP events where `is_opaque` is true** — these are free/busy-only blocks with no title visible (e.g. a work calendar shared as busy-only). They're useful for conflict detection but never as standalone schedule entries; listing them as "(busy)" or "(no title)" is noise.
+  - This week: up to 5 week_events as `display_date` + title (e.g. "Tomorrow — Kemi karate", "Wed Apr 22 — HVAC visit"). **Same rule — skip events with `is_opaque: true`.**
   - Action items: each as * subject — action (`display_urgency`) (e.g. "(this week)", "(today)", "(low priority)")
   - Reminders: each as * description (`display_when`) (e.g. "9am Today", "12pm Tomorrow", "3pm Thu Apr 24")
 
   **Conflicts rendering rules** (when the `conflicts` array is non-empty):
   - This section goes FIRST in the brief — a heads-up the user needs to see before they read past today's schedule. One bullet per conflict.
-  - Each entry has `event_a`, `event_b`, an overlap window, plus `cross_account` and `both_opaque` flags. Render in the format: `<title_a> (<time_a>) vs <title_b> (<time_b>) — overlap <overlap_start>–<overlap_end>`.
-  - If `both_opaque` is true (both sides are free/busy-only blocks with no titles visible), tone the message down — say something like *"you're double-booked <overlap_start>–<overlap_end> across two work blocks"* without claiming to know what either is.
+  - Each entry has `event_a`, `event_b`, an overlap window, plus `cross_account` and `both_opaque` flags.
+  - **Default format:** `<title_a> (<time_a>) vs <title_b> (<time_b>) — overlap <overlap_start>–<overlap_end>`.
+  - **When ONE side is opaque** (`event_a.is_opaque` xor `event_b.is_opaque`): never render the opaque side's `title` as `(busy)` or `(no title)` — instead say *"busy block on `<calendar>`"* using `event_X.calendar`. Example: *"Tola Karate (5:30 PM) vs busy block on Work Calendar (5:35 PM) — overlap 5:35 PM–6:00 PM"*. Falls back to *"work block"* if `calendar` is empty.
+  - **When BOTH sides are opaque** (`both_opaque: true`): tone the message down — say something like *"you're double-booked <overlap_start>–<overlap_end> across two work blocks"* without claiming to know what either is.
   - If `cross_account` is true, include the account labels (e.g. `[work] vs [personal]`) so the user immediately sees which calendars are clashing.
-  - Use `event_a.location` / `event_b.location` if present — "you're in two places" framing is high-signal when both have addresses.
+  - Use `event_a.location` / `event_b.location` if present — "you're in two places" framing is high-signal when both have addresses. Opaque events won't have location; skip the framing on that side.
   - Do NOT propose a resolution. Don't say "consider rescheduling" or "I'll move X." The user decides; the brief just surfaces.
 
   **Never show raw fields** like `time: "14:00"`, `schedule: "2026-04-20 09:00"`, or `urgency: "this_week"`. The briefing JSON's `display_time`, `display_date`, `display_when`, and `display_urgency` are pre-computed for you — use those.
