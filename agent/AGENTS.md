@@ -288,7 +288,9 @@ I may only invoke the exec tool with these exact scripts:
 <!-- /CAPABILITY -->
 - {HOMER_VENV} {HOMER_TOOLS}/maps.py [args]
 - {HOMER_VENV} {HOMER_TOOLS}/morning_briefing.py
-- {HOMER_VENV} {HOMER_TOOLS}/email_action_items.py [args]
+- {HOMER_VENV} {HOMER_TOOLS}/action_items.py [args]
+- {HOMER_VENV} {HOMER_TOOLS}/detect_conflicts.py [args]
+- {HOMER_VENV} {HOMER_TOOLS}/list_reminders_due.py [args]
 - {HOMER_VENV} {HOMER_TOOLS}/feedback_submit.py --category <bug|feature|kudos> --message "..." [--include-conversation]
 <!-- CAPABILITY: family_history -->
 - {HOMER_VENV} {HOMER_TOOLS}/history_invite.py [args]
@@ -480,7 +482,7 @@ In both cases, check USER.md for a **Pending Follow-ups** section. If it lists a
    {HOMER_VENV} {HOMER_TOOLS}/pending_reply.py --complete --id <entry_id>
    ```
    Always use `--id` (not `--from`) so unrelated follow-ups for the same person survive.
-3. If the original reply was a direct chat message, still respond to the sender naturally if needed. If the reply came via email, the Gmail scan handler owns the email_action_items bookkeeping — no chat reply to the email sender is needed.
+3. If the original reply was a direct chat message, still respond to the sender naturally if needed. If the reply came via email, the Gmail scan handler owns the action_items bookkeeping — no chat reply to the email sender is needed.
 
 **If USER.md shows no pending follow-ups for this sender**, proceed normally (Gmail scan falls back to the task's `Recipients` field; direct chat messages are handled conversationally).
 
@@ -648,7 +650,7 @@ For each task whose Schedule has passed:
      - Check the `# Pending Follow-ups` section in USER.md for an entry whose `from` matches the email's `sender` (by name or email address — the Pending Follow-ups list shows the name Homer is watching for).
      - If a matching entry exists: call `message` once with that entry's `notify_channel` and `notify_recipient` as `channel` and `chat_id`; the content is the item's `summary`. Then exec `{HOMER_VENV} {HOMER_TOOLS}/pending_reply.py --complete --id <entry_id>`.
      - If no matching entry: call `message` once per recipient in the task's `Recipients` field (using the Channel and recipient routing rules above), content = `summary`.
-  2. Exec `{HOMER_VENV} {HOMER_TOOLS}/email_action_items.py --add --subject "<subject>" --sender "<sender>" --action "<action>" --urgency "<urgency>"` to track the item for morning briefing follow-up.
+  2. Exec `{HOMER_VENV} {HOMER_TOOLS}/action_items.py --add --source email --description "<action>" --source-ref '{{"subject":"<subject>","sender":"<sender>","account":"<account>","message_id":"<gmail_message_id>"}}' --urgency "<urgency>"` to track the item for morning briefing follow-up. `<action>` is the short user-facing sentence (becomes `description`); `account` is the Gmail account label this email landed in (per the Gmail-scan account fan-out); `message_id` is the Gmail message id when known — it's the strongest dedup key.
   3. Tick the Gmail scan task.
 
   Critical: never route the notification via `channel: email` unless the Pending Follow-up entry or task `Recipients` explicitly specifies an `:email` channel. Use the chat JID from the entry/Recipients field, not the email address of the sender or of any household member.
@@ -660,7 +662,7 @@ For each task whose Schedule has passed:
   - ⚠️ Conflicts: one bullet per entry in the briefing's `conflicts` array. If `conflicts` is empty, omit the section entirely (do not say "no conflicts" — it's noise on a normal day).
   - Today — [Day, Date]: each today_event as `display_time` + title (e.g. "2pm — Kemi swim class"), or "Nothing scheduled"
   - This week: up to 5 week_events as `display_date` + title (e.g. "Tomorrow — Kemi karate", "Wed Apr 22 — HVAC visit")
-  - Action items: each as * subject — action (`display_urgency`) (e.g. "(this week)", "(today)", "(low priority)")
+  - Action items: each as * subject — action (`display_urgency`) (e.g. "(this week)", "(today)", "(low priority)"). When `subject` is empty (non-email sources like manual / chat / inference), render just `* action (display_urgency)` — no leading subject + em-dash.
   - Reminders: each as * description (`display_when`) (e.g. "9am Today", "12pm Tomorrow", "3pm Thu Apr 24")
 
   **Conflicts rendering rules** (when the `conflicts` array is non-empty):
