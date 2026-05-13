@@ -8,8 +8,14 @@ metadata: {"nanobot":{"always":false,"emoji":"🌅"}}
 
 You're composing one user's daily morning brief. The heartbeat's
 **Morning briefing** system task fans out once per recipient and hands
-you that recipient's prompt file (`context/users/<recipient>.brief.md`,
-substituted from `Prompt-file: context/users/{recipient}.brief.md`).
+you that recipient's prompt file (`context/.nanobot_workspace/users/<recipient>.brief.md`,
+substituted from `Prompt-file: users/{recipient}.brief.md` — resolved
+**relative to nanobot's workspace** (`context/.nanobot_workspace/`),
+which is why the field uses the shorter `users/...` path while the
+files live at `context/.nanobot_workspace/users/<name>.brief.md` from
+the homer repo root). The doubled `{{recipient}}` in the source
+HEARTBEAT.md is `format_map` escaping; nanobot sees `{recipient}` and
+substitutes the recipient name.
 The prompt file's contents are the message you receive — this skill
 covers everything that prompt file does NOT need to repeat.
 
@@ -54,7 +60,10 @@ In this order, with this rationale:
    the recipient. Honor any style hint as overrides on top of the
    default presentation below.
 6. **Compose ONE message.** See rendering rules.
-7. **Don't tick the task** — the heartbeat does, after the dispatch.
+7. **Don't tick the task** — the heartbeat marks the parent Morning
+   briefing block done after every per-recipient dispatch completes.
+   Your job is just to compose and send for the recipient this turn is
+   for.
 
 ## Rendering rules
 
@@ -141,7 +150,7 @@ entirely and don't log anything.)
 When a user asks for a change to their brief — "make it shorter",
 "drop the motivation", "lead with reminders" — Homer **edits their
 own file**, not this skill. The path is
-`context/users/<recipient>.brief.md`.
+`context/.nanobot_workspace/users/<recipient>.brief.md`.
 
 Examples of legitimate edits (from past requests):
 
@@ -168,19 +177,28 @@ When `manage_users.py --add <name>` adds a household member, copy the
 template so they get a brief on the next heartbeat:
 
 ```
-cp skills/morning-brief/default.brief.md context/users/<name>.brief.md
+cp skills/morning-brief/default.brief.md context/.nanobot_workspace/users/<name>.brief.md
 ```
 
-Until that file exists, the heartbeat's missing-file fallback fires
-the default task-summary message — the user gets a generic-but-not-
-broken brief on the morning after they're added; their personalized
-brief kicks in once the file is in place.
+For one-shot backfills (post-deploy, multiple users at once), use the
+idempotent migration tool — it skips users who already have a file, so
+running it twice is safe:
+
+```
+{HOMER_VENV} {HOMER_TOOLS}/bootstrap_user_briefs.py
+{HOMER_VENV} {HOMER_TOOLS}/bootstrap_user_briefs.py --user <name>
+```
+
+Until a user's file exists, the heartbeat's missing-file fallback fires
+the default task-summary message — they get a generic-but-not-broken
+brief on the morning after they're added; their personalized brief
+kicks in once the file is in place.
 
 ## Why this shape
 
-The 2026-05-12 17:33 ad-hoc reply ("what's my day looking like")
-produced a **better** response than the scheduled composer brief —
-the agent organically fanned out across accounts, dropped the
-overzealous days_out=1..5 reminder lookahead, and composed cleanly.
-The lesson: trust the model with good primitives + a clear per-user
-prompt. Customization becomes a file edit instead of a code change.
+Trust the model with good primitives + a clear per-user prompt. The
+previous monolithic composer hard-coded one rendering for every user;
+this design lets each household member shape their own brief by
+editing one file, and lets the agent itself decide how to assemble
+the pieces. Customization becomes a file edit instead of a code
+change.

@@ -654,7 +654,7 @@ For each task whose Schedule has passed:
   3. Tick the Gmail scan task.
 
   Critical: never route the notification via `channel: email` unless the Pending Follow-up entry or task `Recipients` explicitly specifies an `:email` channel. Use the chat JID from the entry/Recipients field, not the email address of the sender or of any household member.
-- "Morning briefing" → dispatched per-recipient via the heartbeat's `Prompt-file:` field (each recipient's `context/users/<recipient>.brief.md` becomes the agent message). See `skills/morning-brief/SKILL.md` for the orchestration order, rendering rules, conflict framing, and motivation-no-repeat. Then tick.
+- "Morning briefing" → dispatched per-recipient via the heartbeat's `Prompt-file:` field. Each recipient's `context/.nanobot_workspace/users/<recipient>.brief.md` becomes the agent message (workspace-relative, since nanobot anchors prompt-file resolution at the workspace). See `skills/morning-brief/SKILL.md` for the orchestration order, rendering rules, conflict framing, and motivation-no-repeat. Then tick.
 <!-- CAPABILITY: finance_plaid -->
 - "Balance check" → exec `plaid_balance_check.py --account-mask <Account> --institution <Institution>` (use the task's `Account` and `Institution` fields). SKIP → tick, silence. Otherwise send alert to each recipient in the task's `Recipients` field:
   ```
