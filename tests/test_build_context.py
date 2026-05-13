@@ -354,6 +354,60 @@ Recipients: primary:whatsapp,alex:whatsapp
     assert "template-default:whatsapp" not in result
 
 
+class TestOverlayFields:
+    """Unit tests for `_overlay_fields` — the field-merge primitive that
+    `merge_heartbeat` uses to patch overlay onto template. Tested directly
+    so future regressions land in this layer (not the integration through
+    `merge_heartbeat` + `_merge_system_task` + `_parse_task_blocks`)."""
+
+    def test_template_only_field_preserved(self):
+        template = (
+            "### Morning briefing\n"
+            "Type: system\n"
+            "Schedule: 2026-01-01 07:00\n"
+            "Prompt-file: users/{recipient}.brief.md\n"
+        )
+        overlay = (
+            "### Morning briefing\n"
+            "Type: system\n"
+            "Recipients: primary:whatsapp\n"
+        )
+        result = bc._overlay_fields(template, overlay)
+        assert "Prompt-file: users/{recipient}.brief.md" in result
+        assert "Recipients: primary:whatsapp" in result
+
+    def test_overlay_value_replaces_in_place(self):
+        template = "### X\nRecur: every 1 day\nType: system\n"
+        overlay = "### X\nRecur: every 2 days\n"
+        result = bc._overlay_fields(template, overlay)
+        # Replaced in place — Type still follows Recur
+        assert result.index("Recur: every 2 days") < result.index("Type: system")
+        assert "Recur: every 1 day" not in result
+
+    def test_overlay_only_keys_appended(self):
+        template = "### X\nType: system\n"
+        overlay = "### X\nRecipients: a:whatsapp\nModel: pro\n"
+        result = bc._overlay_fields(template, overlay)
+        assert result.endswith("Recipients: a:whatsapp\nModel: pro\n")
+
+    def test_non_field_lines_ignored(self):
+        """Lines that don't match `Capitalized:` (heading, blank) are
+        passed over — they don't get treated as fields and don't
+        clobber template content."""
+        template = "### X\nType: system\nSchedule: 2026-01-01 07:00\n"
+        overlay = (
+            "### X\n"
+            "some free-form description\n"  # not Capitalized:
+            "Type: system\n"
+            "\n"  # blank
+        )
+        result = bc._overlay_fields(template, overlay)
+        # Free-form line is not picked up as a field, not appended
+        assert "free-form" not in result
+        # Template's Schedule survives (overlay didn't mention it)
+        assert "Schedule: 2026-01-01 07:00" in result
+
+
 def test_merge_overlay_preserves_template_only_fields():
     """Regression: when the template adds a new field to a task that the
     overlay also defines, the new field must survive the merge — overlay

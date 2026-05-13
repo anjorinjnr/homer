@@ -389,6 +389,10 @@ def _parse_task_blocks(section: str) -> list[tuple[str, str]]:
     return blocks
 
 
+# Match `Key: anything` lines inside a task block. Lines that don't start
+# with a Capitalized identifier (the `### heading`, blank lines, free-form
+# descriptions) are intentionally skipped — overlay convention is one
+# Key: Value pair per line.
 _TASK_FIELD_PAT = re.compile(r"^([A-Z][\w-]*):[^\n]*$", re.MULTILINE)
 
 

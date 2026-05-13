@@ -76,7 +76,19 @@ def bootstrap_recipient(recipient: str) -> dict:
       {"recipient": name, "status": "created", "path": "..."}
       {"recipient": name, "status": "exists",  "path": "..."}  # left alone
       {"recipient": name, "status": "error",   "error": "..."}
+
+    Recipient names with `/` or `..` are rejected — they would let an
+    `--recipient` value (or a typo in HEARTBEAT.md's Recipients field)
+    write outside USERS_DIR. Nanobot's prompt-file resolver catches the
+    same shapes on the read side; rejecting here keeps the writer
+    consistent.
     """
+    if "/" in recipient or ".." in recipient:
+        return {
+            "recipient": recipient,
+            "status": "error",
+            "error": "recipient name must not contain '/' or '..'",
+        }
     target = USERS_DIR / f"{recipient}.brief.md"
     if target.exists():
         return {"recipient": recipient, "status": "exists", "path": str(target)}

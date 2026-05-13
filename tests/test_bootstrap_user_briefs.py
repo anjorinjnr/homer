@@ -93,6 +93,16 @@ class TestBootstrap:
         assert result["status"] == "error"
         assert "template missing" in result["error"]
 
+    def test_rejects_path_separator_in_recipient(self, isolated_paths):
+        result = bub.bootstrap_recipient("evil/path")
+        assert result["status"] == "error"
+        assert "'/'" in result["error"]
+
+    def test_rejects_dotdot_in_recipient(self, isolated_paths):
+        result = bub.bootstrap_recipient("..")
+        assert result["status"] == "error"
+        assert ".." in result["error"]
+
 
 class TestCLI:
     def test_default_walks_heartbeat_recipients(self, monkeypatch, capsys):
