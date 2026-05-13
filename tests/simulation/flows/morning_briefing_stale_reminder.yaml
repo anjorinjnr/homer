@@ -1,0 +1,129 @@
+name: "Morning Briefing — Past-Date Reminder Must Not Surface"
+event_id: "sim_morning_briefing_stale_reminder"
+event_name: "Morning Briefing Stale Reminder Simulation"
+model: "gemini/gemini-3.1-pro-preview"
+
+# What this flow proves
+# ─────────────────────
+# Regression guard for a tenant report: a daily morning brief surfaced
+# a reminder for a "travel" task that had already passed. The brief is
+# supposed to filter past-dated reminders at the morning_briefing.py
+# layer (`days_out <= 0` excludes today + past), but something slipped
+# through — possibly a reminder without a `schedule` field, with a
+# malformed schedule, or a code-path that bypassed the filter.
+#
+# This sim tests **the renderer's defense in depth**: even if the
+# briefing JSON contains a stale reminder, the agent must NOT include
+# it in the user-facing message. Past events / reminders are pure
+# noise — the user already lived through them, no point being
+# reminded.
+#
+# Strategy: mock morning_briefing.py output that DELIBERATELY contains
+# a stale reminder (Travel to Boston, schedule 5 days ago) alongside a
+# valid future reminder. Assert the message includes the valid one and
+# excludes the stale one.
+#
+# Complementary unit-test coverage at tests/test_morning_briefing.py
+# (TestReminderFiltering) verifies the tool-layer filter; this sim
+# covers the agent-layer fallback for tool-bug scenarios.
+
+mock_tools:
+  - pattern: "morning_briefing\\.py(?! --log-motivation)"
+    response: |
+      {
+        "type": "morning_briefing",
+        "date": "2026-04-20",
+        "today_events": [],
+        "week_events": [],
+        "conflicts": [],
+        "action_items": [],
+        "reminders": [
+          {
+            "description": "Travel to Boston",
+            "schedule": "2026-04-15 09:00",
+            "display_when": "9am Wed Apr 15",
+            "recipients": "14125550001:whatsapp"
+          },
+          {
+            "description": "Pick up dry cleaning",
+            "schedule": "2026-04-23 17:00",
+            "display_when": "5pm Thu Apr 23",
+            "recipients": "14125550001:whatsapp"
+          }
+        ],
+        "users": [
+          {"name": "Alex"}
+        ],
+        "recent_motivations": ["Make today count."]
+      }
+
+  - pattern: "morning_briefing\\.py --log-motivation"
+    response: |
+      {"status": "logged", "kept": 2}
+
+  - pattern: "tasks_update\\.py --tick"
+    response: |
+      {"status": "ticked"}
+
+heartbeat_md: |
+  # Heartbeat Tasks
+
+  This file is checked every 30 minutes by your nanobot agent.
+
+  ## CRITICAL: Silent Mode Rules
+
+  You are a background process. You are NOT in a conversation.
+
+  RULE 1 — DO NOT WRITE TEXT. Your response must contain ONLY tool calls.
+  RULE 2 — The ONLY way to communicate with users is the message tool.
+  RULE 3 — SKIP means stop. Tick the task and write nothing else.
+  RULE 4 — Empty results mean silence.
+
+  ## User Tasks
+
+  ### Morning briefing
+  Type: system
+  Schedule: 2026-01-01 07:00
+  Recur: every 1 day
+  Recipients: primary:whatsapp
+
+  ## Completed
+
+beats:
+  - actor: alex
+    heartbeat: true
+    message: "Morning briefing (system)"
+    expect:
+      tools_used: ["exec", "message"]
+      message_channels: ["whatsapp"]
+      message_channels_forbidden: ["email", "telegram"]
+      max_tool_calls: 16
+      # The future reminder (dry cleaning Thu Apr 23) MUST appear — proves
+      # the agent rendered the brief and didn't just silently drop everything.
+      message_patterns:
+        - "(?i)dry cleaning"
+      # The stale reminder must NOT appear in any form. The task description,
+      # the destination ("Boston"), and the past date ("Apr 15") are all
+      # forbidden — covers paraphrasing variants.
+      message_patterns_forbidden:
+        - "(?i)travel to boston"
+        - "(?i)\\btravel\\b"
+        - "(?i)boston"
+        - "(?i)apr(il)?\\s*15"
+        - "(?i)wed apr 15"
+        # Raw schema leak guards
+        - "2026-04-15"
+        - "this_week"
+        - "schedule:"
+      tool_sequence:
+        - pattern: "morning_briefing\\.py"
+          note: "Must fetch briefing data"
+        - pattern: "tasks_update\\.py --tick"
+          note: "Must tick the task after sending"
+    note: >
+      Stale reminder defense-in-depth: even when morning_briefing.py's
+      output contains a past-dated reminder (tool-layer filter bug or
+      edge case), the agent's rendering rules must exclude it from the
+      user-facing brief. Past reminders are pure noise — the user has
+      already lived through that day. Only the valid future reminder
+      (dry cleaning, 3 days out) should surface.
