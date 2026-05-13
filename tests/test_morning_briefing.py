@@ -77,7 +77,22 @@ class TestRunTool:
 
 SAMPLE_CALENDAR = {"today_events": [{"title": "Dentist"}], "week_events": [{"title": "Meeting"}]}
 SAMPLE_EMAILS = [
-    {"subject": "Invoice #123", "sender": "billing@vendor.com", "action": "Pay invoice", "urgency": "today"},
+    {
+        "id": "ai_abc12345",
+        "description": "Pay invoice",
+        "source": "email",
+        "source_ref": {
+            "subject": "Invoice #123",
+            "sender": "billing@vendor.com",
+            "account": "primary",
+        },
+        "urgency": "today",
+        "due_at": "",
+        "status": "open",
+        "snoozed_until": None,
+        "created_at": "2026-04-09T10:00:00+00:00",
+        "completed_at": None,
+    },
 ]
 SAMPLE_TASKS = [
     {"description": "Gmail scan", "type": "system", "schedule": "2026-04-10 09:00", "recipients": "primary:whatsapp"},
@@ -119,7 +134,7 @@ class TestMainOutput:
         def mock_run_tool(script, extra_args=None):
             if "calendar_fetch" in script:
                 return calendar_data
-            elif "email_action_items" in script:
+            elif "action_items" in script:
                 return email_data
             elif "tasks_update" in script:
                 return tasks_data
@@ -408,7 +423,7 @@ class TestReminderFiltering:
         def mock_run_tool(script, extra_args=None):
             if "calendar_fetch" in script:
                 return {"today_events": [], "week_events": []}
-            if "email_action_items" in script:
+            if "action_items" in script:
                 return []
             if "tasks_update" in script:
                 return tasks

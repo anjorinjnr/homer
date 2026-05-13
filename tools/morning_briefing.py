@@ -315,6 +315,18 @@ def _enrich_reminder(r: dict, today: date) -> dict:
     return out
 
 
+def _adapt_legacy_action_item(item: dict) -> dict:
+    """Map action_items.py's generic schema onto the old (subject, sender,
+    action) shape the brief's AGENTS.md rules still render. Falls through
+    untouched if the item already looks legacy-shaped."""
+    out = dict(item)
+    ref = item.get("source_ref") or {}
+    out.setdefault("subject", ref.get("subject", "") or item.get("description", ""))
+    out.setdefault("sender", ref.get("sender", ""))
+    out.setdefault("action", item.get("description", ""))
+    return out
+
+
 def _enrich_action_item(a: dict) -> dict:
     """Add display_urgency ('today' / 'this week' / 'low priority')."""
     out = dict(a)
@@ -393,7 +405,7 @@ def gather_briefing(account: str | None = None) -> dict:
     pool_size = min(8, max(3, len(cal_accounts) + 2))
     with ThreadPoolExecutor(max_workers=pool_size) as pool:
         cal_futures = {name: pool.submit(_fetch_calendar_for, name) for name in cal_accounts}
-        actions_future = pool.submit(run_tool, "email_action_items.py", ["--list"])
+        actions_future = pool.submit(run_tool, "action_items.py", ["--list"])
         tasks_future = pool.submit(run_tool, "tasks_update.py", ["--list"])
 
     per_account_calendar = {name: f.result() for name, f in cal_futures.items()}
@@ -427,7 +439,11 @@ def gather_briefing(account: str | None = None) -> dict:
                     pass
             reminders.append(_enrich_reminder(t, today))
 
-    action_items = [_enrich_action_item(a)
+    # action_items.py emits the new generic schema (description / source / source_ref).
+    # The brief's existing rendering rules in AGENTS.md still read subject / sender /
+    # action — adapt here so PR-B can ship without rewriting the brief rules. PR-C
+    # replaces this whole composer with per-user .brief.md prompts.
+    action_items = [_enrich_action_item(_adapt_legacy_action_item(a))
                     for a in (action_items_data if isinstance(action_items_data, list) else [])]
 
     conflicts = _detect_conflicts(today_events)
