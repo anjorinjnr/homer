@@ -112,16 +112,27 @@ def _due_date(entry: dict) -> date | None:
         return None
 
 
+def _norm(s: str) -> str:
+    """Normalize a dedup-key component: strip whitespace, lowercase, collapse
+    common reply/forward prefixes that Gmail adds on the same thread."""
+    out = (s or "").strip().lower()
+    while out.startswith(("re:", "fwd:", "fw:")):
+        out = out.split(":", 1)[1].strip()
+    return out
+
+
 def _email_dedupe_key(source_ref: dict) -> tuple | None:
     """Email items dedupe on message_id when present, else (subject, sender,
-    account). Other sources have no automatic dedup — multiple manual or
-    inference items with the same description are allowed."""
+    account). Normalized — `"Receipt"` and `"Re: Receipt"` dedupe, case
+    variants dedupe — matching the cross-account event-dedup convention.
+    Other sources have no automatic dedup — multiple manual or inference
+    items with the same description are allowed."""
     mid = (source_ref.get("message_id") or "").strip()
     if mid:
         return ("mid", mid)
-    subj = (source_ref.get("subject") or "").strip()
-    sender = (source_ref.get("sender") or "").strip()
-    account = (source_ref.get("account") or "").strip()
+    subj = _norm(source_ref.get("subject") or "")
+    sender = _norm(source_ref.get("sender") or "")
+    account = _norm(source_ref.get("account") or "")
     if subj or sender:
         return ("ssa", subj, sender, account)
     return None
@@ -192,6 +203,12 @@ def cmd_complete(entry_id: str) -> None:
     entries = _load()
     for e in entries:
         if e.get("id") == entry_id:
+            if e.get("status") == "done":
+                # Idempotent: keep the original completed_at — a re-run
+                # from gmail-scan resolving the same item twice shouldn't
+                # rewrite history.
+                print(json.dumps({"status": "already_done", "id": entry_id}))
+                return
             e["status"] = "done"
             e["completed_at"] = _now_iso()
             _save(entries)

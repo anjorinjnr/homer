@@ -662,7 +662,7 @@ For each task whose Schedule has passed:
   - ⚠️ Conflicts: one bullet per entry in the briefing's `conflicts` array. If `conflicts` is empty, omit the section entirely (do not say "no conflicts" — it's noise on a normal day).
   - Today — [Day, Date]: each today_event as `display_time` + title (e.g. "2pm — Kemi swim class"), or "Nothing scheduled"
   - This week: up to 5 week_events as `display_date` + title (e.g. "Tomorrow — Kemi karate", "Wed Apr 22 — HVAC visit")
-  - Action items: each as * subject — action (`display_urgency`) (e.g. "(this week)", "(today)", "(low priority)")
+  - Action items: each as * subject — action (`display_urgency`) (e.g. "(this week)", "(today)", "(low priority)"). When `subject` is empty (non-email sources like manual / chat / inference), render just `* action (display_urgency)` — no leading subject + em-dash.
   - Reminders: each as * description (`display_when`) (e.g. "9am Today", "12pm Tomorrow", "3pm Thu Apr 24")
 
   **Conflicts rendering rules** (when the `conflicts` array is non-empty):
