@@ -389,6 +389,47 @@ def _parse_task_blocks(section: str) -> list[tuple[str, str]]:
     return blocks
 
 
+_TASK_FIELD_PAT = re.compile(r"^([A-Z][\w-]*):[^\n]*$", re.MULTILINE)
+
+
+def _overlay_fields(template_block: str, overlay_block: str) -> str:
+    """Apply overlay's Key: Value lines onto template, preserving template's
+    fields the overlay doesn't mention.
+
+    Per-tenant overlay (`context/user_context/heartbeat_tasks.md`) used to
+    fully replace the template block for a same-named task — meaning a new
+    field added to the template (PR-C's `Prompt-file:` on Morning briefing,
+    say) silently disappeared in production for any tenant whose overlay
+    pre-dated the template change. This patch-style merge fixes that: the
+    overlay supplies what it overrides or adds; everything else stays from
+    the template.
+
+    Same-key lines: overlay replaces template in place (preserves order).
+    Overlay-only keys: appended in overlay's order.
+    Template-only keys (the bug-fix scenario): preserved as-is.
+    """
+    template_fields: dict[str, str] = {}
+    for m in _TASK_FIELD_PAT.finditer(template_block):
+        template_fields.setdefault(m.group(1), m.group(0))
+
+    result = template_block
+    appended: list[str] = []
+    seen: set[str] = set()
+    for m in _TASK_FIELD_PAT.finditer(overlay_block):
+        key, line = m.group(1), m.group(0)
+        if key in seen:
+            continue
+        seen.add(key)
+        if key in template_fields:
+            result = result.replace(template_fields[key], line, 1)
+        else:
+            appended.append(line)
+
+    if appended:
+        result = result.rstrip("\n") + "\n" + "\n".join(appended) + "\n"
+    return result
+
+
 def _merge_system_task(template_block: str, live_block: str) -> str:
     """Use template fields but preserve Schedule, Last-run, Model, and Id from live block."""
     result = template_block
@@ -664,12 +705,19 @@ def merge_heartbeat(template: str, live: str, household_tasks: str = "") -> str:
     merged_blocks: list[str] = []
     seen_names: set[str] = set()
 
-    # System tasks: template first, then household overlay appended.
-    # Household overrides template when names collide.
+    # System tasks: template first, then household overlay patches template
+    # field-by-field. When overlay and template share a task name, overlay
+    # fields override template's same-key fields and overlay-only fields are
+    # appended — template-only fields survive so new fields added to
+    # agent/HEARTBEAT.md don't silently drop in tenants whose overlay
+    # pre-dates the template change.
     for name, template_block in template_tasks:
         if "Type: system" not in template_block:
             continue
-        source_block = household_tasks_dict.get(name, template_block)
+        if name in household_tasks_dict:
+            source_block = _overlay_fields(template_block, household_tasks_dict[name])
+        else:
+            source_block = template_block
         if name in live_tasks_dict:
             merged_blocks.append(_merge_system_task(source_block, live_tasks_dict[name]))
         else:

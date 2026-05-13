@@ -327,7 +327,8 @@ Recipients: primary:whatsapp
 
 
 def test_merge_overlay_overrides_template_for_same_name():
-    """If the overlay and template both define 'Gmail scan', overlay wins."""
+    """If the overlay and template both define 'Gmail scan', overlay's
+    version of same-key fields wins."""
     template_with_gmail = (
         SYSTEM_PREFIX
         + USER_TASKS_HEADER
@@ -351,6 +352,95 @@ Recipients: primary:whatsapp,alex:whatsapp
     result = bc.merge_heartbeat(template_with_gmail, template_with_gmail, overlay)
     assert "primary:whatsapp,alex:whatsapp" in result
     assert "template-default:whatsapp" not in result
+
+
+def test_merge_overlay_preserves_template_only_fields():
+    """Regression: when the template adds a new field to a task that the
+    overlay also defines, the new field must survive the merge — overlay
+    patches template field-by-field, not full-block replace.
+
+    The morning-brief redesign hit this: PR-C added `Prompt-file:` to the
+    template's Morning briefing block, but Ebby's overlay had its own
+    Morning briefing block (without that field). The deploy silently
+    dropped Prompt-file and the brief safe-degraded to default summary."""
+    template = (
+        SYSTEM_PREFIX
+        + USER_TASKS_HEADER
+        + """\
+
+### Morning briefing
+Type: system
+Schedule: 2026-01-01 07:00
+Recur: every 1 day
+Prompt-file: users/{recipient}.brief.md
+"""
+        + "\n## Completed\n\n"
+    )
+    overlay = """\
+### Morning briefing
+Type: system
+Schedule: 2026-01-01 07:00
+Recur: every 1 day
+Recipients: primary:whatsapp,alex:whatsapp
+"""
+    result = bc.merge_heartbeat(template, template, overlay)
+    assert "Prompt-file: users/{recipient}.brief.md" in result
+    assert "Recipients: primary:whatsapp,alex:whatsapp" in result
+
+
+def test_merge_overlay_appends_overlay_only_fields():
+    """An overlay-only field (e.g. Recipients on a template task that
+    didn't declare any) should append, not replace existing template
+    content."""
+    template = (
+        SYSTEM_PREFIX
+        + USER_TASKS_HEADER
+        + """\
+
+### Gmail scan
+Type: system
+Schedule: 2026-01-01 09:00
+Recur: every 1 hour
+"""
+        + "\n## Completed\n\n"
+    )
+    overlay = """\
+### Gmail scan
+Type: system
+Recipients: primary:whatsapp
+"""
+    result = bc.merge_heartbeat(template, template, overlay)
+    assert "Schedule: 2026-01-01 09:00" in result
+    assert "Recur: every 1 hour" in result
+    assert "Recipients: primary:whatsapp" in result
+
+
+def test_merge_overlay_field_value_wins_over_template():
+    """Same key in both (excluding live-state fields Schedule/Last-run/
+    Model/Id which _merge_system_task carries from live): overlay value
+    replaces template value in place."""
+    template = (
+        SYSTEM_PREFIX
+        + USER_TASKS_HEADER
+        + """\
+
+### Morning briefing
+Type: system
+Schedule: 2026-01-01 07:00
+Recur: every 1 day
+"""
+        + "\n## Completed\n\n"
+    )
+    overlay = """\
+### Morning briefing
+Type: system
+Recur: every 2 days
+Recipients: primary:whatsapp
+"""
+    result = bc.merge_heartbeat(template, template, overlay)
+    # Overlay's Recur wins (every 2 days, not every 1 day)
+    assert "Recur: every 2 days" in result
+    assert "Recur: every 1 day" not in result
 
 
 def test_merge_overlay_non_system_tasks_ignored():

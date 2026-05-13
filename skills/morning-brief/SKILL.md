@@ -171,26 +171,32 @@ After an edit, send a one-line confirmation to the user
 ("Got it — your brief will lead with reminders from tomorrow on") so
 they know it landed.
 
-## Bootstrap: a new user is added
+## Bootstrap: a new recipient is added
 
-When `manage_users.py --add <name>` adds a household member, copy the
-template so they get a brief on the next heartbeat:
+The brief files are keyed by the **recipient name** in HEARTBEAT.md's
+Morning briefing block (`Recipients: primary:whatsapp,seun:whatsapp` →
+files at `users/primary.brief.md`, `users/seun.brief.md`), NOT by the
+registry user name from `manage_users.py --list`. The recipient
+namespace is whatever sender-map routing the household uses (`primary`
+for the admin, lowercase first names for others).
 
-```
-cp skills/morning-brief/default.brief.md context/.nanobot_workspace/users/<name>.brief.md
-```
-
-For one-shot backfills (post-deploy, multiple users at once), use the
-idempotent migration tool — it skips users who already have a file, so
-running it twice is safe:
+When the Recipients field changes — a new household member is added,
+or `manage_users.py --add` triggers a Recipients update — run the
+idempotent migration tool to create the matching prompt file:
 
 ```
 {HOMER_VENV} {HOMER_TOOLS}/bootstrap_user_briefs.py
-{HOMER_VENV} {HOMER_TOOLS}/bootstrap_user_briefs.py --user <name>
+{HOMER_VENV} {HOMER_TOOLS}/bootstrap_user_briefs.py --recipient <name>
 ```
 
-Until a user's file exists, the heartbeat's missing-file fallback fires
-the default task-summary message — they get a generic-but-not-broken
+The tool parses the live HEARTBEAT.md, walks the Morning briefing
+Recipients (stripping `:channel` suffixes), and copies
+`skills/morning-brief/default.brief.md` →
+`context/.nanobot_workspace/users/<recipient>.brief.md` for each one.
+Existing files are left alone (recipient may have edited theirs).
+
+Until a recipient's file exists, the heartbeat's missing-file fallback
+fires the default task-summary message — they get a generic-but-not-broken
 brief on the morning after they're added; their personalized brief
 kicks in once the file is in place.
 
