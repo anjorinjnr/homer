@@ -1,0 +1,244 @@
+name: "Morning Briefing — Conflict Rendering Rules"
+event_id: "sim_morning_briefing_conflicts"
+event_name: "Morning Briefing Conflicts Simulation"
+model: "gemini/gemini-3.1-pro-preview"
+
+# What this flow proves
+# ─────────────────────
+# Regression guard for the brief's conflict rendering rules. Verifies three
+# distinct conflict shapes get rendered correctly in ONE morning brief:
+#
+#   1. ONE-SIDE-OPAQUE conflict (the 2026-05-12 production bug):
+#      A titled event clashes with a free/busy-only block from a shared
+#      work calendar. The opaque side has no title (`(busy)` placeholder)
+#      and must be rendered as "busy block on <calendar>", NEVER as the
+#      literal "(busy)" or "(no title)".
+#
+#   2. BOTH-OPAQUE conflict (the tone-down rule):
+#      Two free/busy blocks overlap. The model must NOT invent titles —
+#      it should say something like "you're double-booked X-Y across two
+#      work blocks" without claiming to know what either is.
+#
+#   3. CROSS-ACCOUNT conflict (the account-label rule):
+#      Two titled events overlap, one on each linked account. The model
+#      must include both account labels ([work] / [personal] or similar)
+#      so the user immediately sees which calendars clash.
+#
+# Additional invariants:
+#   - Conflicts section appears FIRST in the brief (heads-up before the
+#     user reads past today's schedule).
+#   - Opaque events do NOT appear as standalone entries in the Today /
+#     This week sections — they only matter for conflict detection.
+#
+# Complementary structural tests in:
+#   tests/test_morning_briefing.py → class TestConflictDetection
+#   tests/test_calendar_fetch.py → opaque title placeholder tests
+
+mock_tools:
+  - pattern: "morning_briefing\\.py(?! --log-motivation)"
+    response: |
+      {
+        "type": "morning_briefing",
+        "date": "2026-04-20",
+        "today_events": [
+          {"title": "Kemi karate", "date": "2026-04-20", "time": "5:30 PM",
+           "end_time": "6:30 PM",
+           "display_date": "Today", "display_time": "5:30pm",
+           "account": "primary",
+           "calendar": "Family", "access_role": "owner", "is_opaque": false,
+           "start_minutes": 1050, "end_minutes": 1110},
+          {"title": "(busy)", "date": "2026-04-20", "time": "5:35 PM",
+           "end_time": "6:00 PM",
+           "display_date": "Today", "display_time": "5:35pm",
+           "account": "personal",
+           "calendar": "Work Calendar", "access_role": "freeBusyReader",
+           "is_opaque": true,
+           "start_minutes": 1055, "end_minutes": 1080},
+          {"title": "Project review", "date": "2026-04-20", "time": "2:00 PM",
+           "end_time": "3:00 PM",
+           "display_date": "Today", "display_time": "2pm",
+           "account": "primary",
+           "calendar": "Family", "access_role": "owner", "is_opaque": false,
+           "start_minutes": 840, "end_minutes": 900},
+          {"title": "Dentist", "date": "2026-04-20", "time": "2:30 PM",
+           "end_time": "3:30 PM",
+           "display_date": "Today", "display_time": "2:30pm",
+           "account": "personal",
+           "calendar": "Personal", "access_role": "owner", "is_opaque": false,
+           "start_minutes": 870, "end_minutes": 930},
+          {"title": "(busy)", "date": "2026-04-20", "time": "9:00 AM",
+           "end_time": "9:30 AM",
+           "display_date": "Today", "display_time": "9am",
+           "account": "personal",
+           "calendar": "Work Calendar", "access_role": "freeBusyReader",
+           "is_opaque": true,
+           "start_minutes": 540, "end_minutes": 570},
+          {"title": "(busy)", "date": "2026-04-20", "time": "9:15 AM",
+           "end_time": "10:00 AM",
+           "display_date": "Today", "display_time": "9:15am",
+           "account": "personal",
+           "calendar": "Work Calendar", "access_role": "freeBusyReader",
+           "is_opaque": true,
+           "start_minutes": 555, "end_minutes": 600}
+        ],
+        "week_events": [],
+        "conflicts": [
+          {
+            "date": "2026-04-20",
+            "overlap_start_minutes": 540,
+            "overlap_end_minutes": 570,
+            "event_a": {"title": "(busy)", "time": "9:00 AM", "end_time": "9:30 AM",
+                        "location": "", "calendar": "Work Calendar",
+                        "account": "personal", "event_id": "busy-1",
+                        "is_opaque": true},
+            "event_b": {"title": "(busy)", "time": "9:15 AM", "end_time": "10:00 AM",
+                        "location": "", "calendar": "Work Calendar",
+                        "account": "personal", "event_id": "busy-2",
+                        "is_opaque": true},
+            "cross_account": false,
+            "both_opaque": true
+          },
+          {
+            "date": "2026-04-20",
+            "overlap_start_minutes": 870,
+            "overlap_end_minutes": 900,
+            "event_a": {"title": "Project review", "time": "2:00 PM", "end_time": "3:00 PM",
+                        "location": "Zoom", "calendar": "Family",
+                        "account": "primary", "event_id": "proj-1",
+                        "is_opaque": false},
+            "event_b": {"title": "Dentist", "time": "2:30 PM", "end_time": "3:30 PM",
+                        "location": "1500 Main St", "calendar": "Personal",
+                        "account": "personal", "event_id": "dent-1",
+                        "is_opaque": false},
+            "cross_account": true,
+            "both_opaque": false
+          },
+          {
+            "date": "2026-04-20",
+            "overlap_start_minutes": 1055,
+            "overlap_end_minutes": 1080,
+            "event_a": {"title": "Kemi karate", "time": "5:30 PM", "end_time": "6:30 PM",
+                        "location": "Dojo", "calendar": "Family",
+                        "account": "primary", "event_id": "kar-1",
+                        "is_opaque": false},
+            "event_b": {"title": "(busy)", "time": "5:35 PM", "end_time": "6:00 PM",
+                        "location": "", "calendar": "Work Calendar",
+                        "account": "personal", "event_id": "busy-3",
+                        "is_opaque": true},
+            "cross_account": true,
+            "both_opaque": false
+          }
+        ],
+        "action_items": [],
+        "reminders": [],
+        "accounts_attempted": ["primary", "personal"],
+        "users": [
+          {"name": "Alex"}
+        ],
+        "recent_motivations": ["Make it a great one."]
+      }
+
+  - pattern: "morning_briefing\\.py --log-motivation"
+    response: |
+      {"status": "logged", "kept": 2}
+
+  - pattern: "tasks_update\\.py --tick"
+    response: |
+      {"status": "ticked"}
+
+heartbeat_md: |
+  # Heartbeat Tasks
+
+  This file is checked every 30 minutes by your nanobot agent.
+
+  ## CRITICAL: Silent Mode Rules
+
+  You are a background process. You are NOT in a conversation.
+
+  RULE 1 — DO NOT WRITE TEXT. Your response must contain ONLY tool calls.
+  RULE 2 — The ONLY way to communicate with users is the message tool.
+  RULE 3 — SKIP means stop. Tick the task and write nothing else.
+  RULE 4 — Empty results mean silence.
+
+  ## User Tasks
+
+  ### Morning briefing
+  Type: system
+  Schedule: 2026-01-01 07:00
+  Recur: every 1 day
+  Recipients: primary:whatsapp
+
+  ## Completed
+
+beats:
+  - actor: alex
+    heartbeat: true
+    message: "Morning briefing (system)"
+    expect:
+      tools_used: ["exec", "message"]
+      message_channels: ["whatsapp"]
+      # Skipping message_chat_ids — agent resolves the recipient from
+      # household.md and the chat_id format varies. message_channels +
+      # content checks are enough to prove correct delivery.
+      max_tool_calls: 16
+      message_patterns:
+        # ── Conflicts section must be present, surfaced visibly ─────
+        # The exact emoji is up to the model; the word "conflict" or
+        # "double-booked" anchors the section.
+        - "(?i)(conflict|double[- ]?book|overlap)"
+
+        # ── Conflict 1: one-side-opaque (Kemi karate vs work block) ─
+        - "(?i)karate"
+        # The opaque side must be described in a meaningful way —
+        # "busy block", "work block", or referencing the calendar name
+        # ("Work Calendar"). Any of these proves the agent didn't dump
+        # the "(busy)" placeholder verbatim.
+        - "(?i)(busy block|work block|work calendar)"
+
+        # ── Conflict 2: cross-account (Project review vs Dentist) ───
+        - "(?i)project review"
+        - "(?i)dentist"
+        # Cross-account label visibility — the user must see WHICH
+        # accounts clash. Account names appear in either conflict line.
+        - "(?i)(personal|work|primary)"
+
+        # ── Conflict 3: both-opaque ─────────────────────────────────
+        # The tone-down rule fires here. The message should reference
+        # being "double-booked" or similar, without inventing fake
+        # titles for either side. Most accurate ways: "two work blocks
+        # 9–10am", "you're blocked twice in the 9am hour", etc.
+        - "(?i)(double[- ]?book|two .{0,30}(work|busy) ?(block|appointment)|9.{0,5}(am|to))"
+
+      message_patterns_forbidden:
+        # The literal placeholder must never leak — this is the bug
+        # we landed the fix for on 2026-05-12.
+        - "\\(no title\\)"
+        - "\\(busy\\)"
+        # Raw schema leaks
+        - "is_opaque"
+        - "both_opaque"
+        - "cross_account"
+        - "accounts_attempted"
+        - "start_minutes"
+        - "event_a"
+        - "event_b"
+        # The opaque events from 9-10am must NOT appear in the regular
+        # Today section — they only belong in the conflicts section.
+        # If "9am — (busy)" or "9am — busy" appears as a standalone
+        # bullet outside the conflicts framing, the skip-opaque rule
+        # failed. We look for a tell: a bullet line that lists 9am
+        # paired with the word "busy" but NOT next to "conflict" /
+        # "overlap" / "double". Approximate via a forbidden phrase:
+        - "(?im)^\\s*[-*•]\\s*9[:\\.]?\\d{0,2}\\s?(am)?\\s*[—\\-]\\s*\\(?busy\\)?\\s*$"
+
+      tool_sequence:
+        - pattern: "morning_briefing\\.py"
+          note: "Must fetch briefing data"
+        - pattern: "tasks_update\\.py --tick"
+          note: "Must tick after sending"
+    note: >
+      Conflict rendering: Homer must surface all three conflicts (one-opaque,
+      cross-account, both-opaque) in the Conflicts section, render the opaque
+      side as "busy block on <calendar>" not "(busy)" / "(no title)", tone
+      down the both-opaque case to "double-booked" without inventing titles,
+      and SKIP opaque events from the Today section entirely.

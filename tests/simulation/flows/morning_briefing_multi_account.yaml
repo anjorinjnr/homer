@@ -1,0 +1,154 @@
+name: "Morning Briefing — Multi-Account Fan-Out & Labeling"
+event_id: "sim_morning_briefing_multi_account"
+event_name: "Morning Briefing Multi-Account Simulation"
+model: "gemini/gemini-3.1-pro-preview"
+
+# What this flow proves
+# ─────────────────────
+# Households with more than one linked Google account (e.g. a `primary`
+# household account plus a `personal` account for one member) get ONE
+# combined morning brief — never parallel per-account briefs.
+#
+# Specific guarantees:
+#   1. Events from EVERY contributing account appear in the single brief.
+#   2. Each event surfaces with a per-account label (e.g. `[personal]`)
+#      so the user can tell which calendar a thing is on. The exact
+#      label format is up to the model, but the account name must be
+#      visible per-event.
+#   3. The brief mentions which accounts were attempted (top-line
+#      "synced both accounts" framing OR the per-event labels — either
+#      satisfies the regression, the point is the user knows).
+#   4. The brief is a SINGLE message per recipient — never two morning
+#      briefs ("here's your work brief / here's your personal brief").
+#
+# Complementary unit tests with structural coverage live in:
+#   tests/test_morning_briefing.py → class TestMultiAccountFanout
+
+mock_tools:
+  - pattern: "morning_briefing\\.py(?! --log-motivation)"
+    response: |
+      {
+        "type": "morning_briefing",
+        "date": "2026-04-20",
+        "today_events": [
+          {"title": "Standup", "date": "2026-04-20", "time": "9:00 AM",
+           "display_date": "Today", "display_time": "9am",
+           "account": "personal",
+           "calendar": "Personal", "access_role": "owner", "is_opaque": false,
+           "start_minutes": 540, "end_minutes": 570},
+          {"title": "Kemi swim class", "date": "2026-04-20", "time": "2:00 PM",
+           "display_date": "Today", "display_time": "2pm",
+           "account": "primary",
+           "calendar": "Family", "access_role": "owner", "is_opaque": false,
+           "start_minutes": 840, "end_minutes": 900},
+          {"title": "Dentist — Alex", "date": "2026-04-20", "time": "4:30 PM",
+           "display_date": "Today", "display_time": "4:30pm",
+           "account": "primary",
+           "calendar": "Family", "access_role": "owner", "is_opaque": false,
+           "start_minutes": 990, "end_minutes": 1050}
+        ],
+        "week_events": [
+          {"title": "Kemi karate", "date": "2026-04-21", "time": "4:00 PM",
+           "display_date": "Tomorrow", "display_time": "4pm",
+           "account": "primary",
+           "calendar": "Family", "access_role": "owner", "is_opaque": false,
+           "start_minutes": 960, "end_minutes": 1020}
+        ],
+        "action_items": [],
+        "reminders": [],
+        "conflicts": [],
+        "accounts_attempted": ["primary", "personal"],
+        "users": [
+          {"name": "Alex"}
+        ],
+        "recent_motivations": [
+          "Little wins add up — have a great one."
+        ]
+      }
+
+  - pattern: "morning_briefing\\.py --log-motivation"
+    response: |
+      {"status": "logged", "kept": 2}
+
+  - pattern: "tasks_update\\.py --tick"
+    response: |
+      {"status": "ticked"}
+
+heartbeat_md: |
+  # Heartbeat Tasks
+
+  This file is checked every 30 minutes by your nanobot agent.
+
+  ## CRITICAL: Silent Mode Rules
+
+  You are a background process. You are NOT in a conversation.
+
+  RULE 1 — DO NOT WRITE TEXT. Your response must contain ONLY tool calls.
+  RULE 2 — The ONLY way to communicate with users is the message tool.
+  RULE 3 — SKIP means stop. Tick the task and write nothing else.
+  RULE 4 — Empty results mean silence.
+
+  ## User Tasks
+
+  System tasks (Type: system): run the task's exec per Heartbeat Execution rules
+  in AGENTS.md, then tick.
+
+  ### Morning briefing
+  Type: system
+  Schedule: 2026-01-01 07:00
+  Recur: every 1 day
+  Recipients: primary:whatsapp
+
+  ## Completed
+
+beats:
+  - actor: alex
+    heartbeat: true
+    message: "Morning briefing (system)"
+    expect:
+      tools_used: ["exec", "message"]
+      message_channels: ["whatsapp"]
+      message_channels_forbidden: ["email", "telegram"]
+      # We deliberately don't assert message_chat_ids — the agent resolves
+      # the recipient from household.md and the chat_id format varies by
+      # fixture state. message_channels + content checks are enough to
+      # prove the brief was delivered correctly.
+      max_tool_calls: 16
+      # All three of today's events must surface, regardless of which
+      # account they came from.
+      message_patterns:
+        - "(?i)standup"
+        - "(?i)swim"
+        - "(?i)dentist"
+        - "(?i)karate"
+        # Per-event account labeling — the model has latitude on format
+        # (`[personal]` vs `(personal)` vs ` · personal`) but must
+        # surface "personal" near at least one event so the user can
+        # tell calendars apart.
+        - "(?i)personal"
+      message_patterns_forbidden:
+        # Anti-pattern: two separate briefs (one for each account).
+        # If the message contains both "primary brief" AND "personal
+        # brief" as section headers, the agent split when it should
+        # have synthesized.
+        - "(?i)personal brief"
+        - "(?i)primary brief"
+        - "(?i)work brief"
+        # Raw schema leaks
+        - "is_opaque"
+        - "access_role"
+        - "accounts_attempted"
+        - "start_minutes"
+      tool_sequence:
+        - pattern: "morning_briefing\\.py"
+          note: "Must fetch briefing data first"
+        - pattern: "morning_briefing\\.py --log-motivation"
+          note: "Must log the motivation after sending"
+        - pattern: "tasks_update\\.py --tick"
+          note: "Must tick the Morning briefing task after sending"
+    note: >
+      Multi-account brief: Homer fetches morning_briefing.py once (which
+      already fans out internally), receives events from both `primary`
+      and `personal` accounts, and synthesizes ONE combined message per
+      recipient. Each event carries its source account so the user can
+      tell calendars apart — but never two separate briefs.

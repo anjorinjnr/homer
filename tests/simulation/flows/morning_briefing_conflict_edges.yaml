@@ -1,0 +1,206 @@
+name: "Morning Briefing — Conflict Edges (stress: pile-up, back-to-back, all-day)"
+event_id: "sim_morning_briefing_conflict_edges"
+event_name: "Morning Briefing Conflict Edges Simulation"
+model: "gemini/gemini-3.1-pro-preview"
+
+# What this flow proves
+# ─────────────────────
+# Stress test for the conflict-rendering layer. Three challenging
+# shapes the basic conflicts flow doesn't cover:
+#
+#   1. THREE-WAY PILE-UP. A, B, C all overlap in the same window. The
+#      brief should surface this as one consolidated heads-up — not
+#      three separate "A vs B / A vs C / B vs C" lines. Or if it does
+#      list pairs, it must be clear they're the same time block.
+#
+#   2. BACK-TO-BACK EVENTS (NOT a conflict). 5pm-6pm followed by
+#      6pm-7pm share an endpoint but do NOT overlap. The brief must
+#      NOT flag these as a conflict — the `conflicts` array is empty
+#      for them at the data layer; the renderer must not invent one.
+#
+#   3. ALL-DAY vs TIMED (NOT a conflict). An all-day "Spring Break"
+#      and a 9am Standup don't physically double-book. _detect_conflicts
+#      excludes all-day events; the renderer must not add them.
+#
+# Plus a basic two-way conflict to anchor the section so we can tell
+# the renderer produced the section at all (no false negatives).
+
+mock_tools:
+  - pattern: "morning_briefing\\.py(?! --log-motivation)"
+    response: |
+      {
+        "type": "morning_briefing",
+        "date": "2026-04-20",
+        "today_events": [
+          {"title": "Strategy review", "date": "2026-04-20", "time": "9:00 AM",
+           "end_time": "11:00 AM", "display_date": "Today", "display_time": "9am",
+           "account": "primary", "calendar": "Work",
+           "access_role": "owner", "is_opaque": false,
+           "start_minutes": 540, "end_minutes": 660},
+          {"title": "1:1 with manager", "date": "2026-04-20", "time": "9:30 AM",
+           "end_time": "10:30 AM", "display_date": "Today", "display_time": "9:30am",
+           "account": "primary", "calendar": "Work",
+           "access_role": "owner", "is_opaque": false,
+           "start_minutes": 570, "end_minutes": 630},
+          {"title": "Vendor call", "date": "2026-04-20", "time": "10:00 AM",
+           "end_time": "10:45 AM", "display_date": "Today", "display_time": "10am",
+           "account": "primary", "calendar": "Work",
+           "access_role": "owner", "is_opaque": false,
+           "start_minutes": 600, "end_minutes": 645},
+          {"title": "School pickup", "date": "2026-04-20", "time": "5:00 PM",
+           "end_time": "6:00 PM", "display_date": "Today", "display_time": "5pm",
+           "account": "primary", "calendar": "Family",
+           "access_role": "owner", "is_opaque": false,
+           "start_minutes": 1020, "end_minutes": 1080},
+          {"title": "Soccer practice", "date": "2026-04-20", "time": "6:00 PM",
+           "end_time": "7:00 PM", "display_date": "Today", "display_time": "6pm",
+           "account": "primary", "calendar": "Family",
+           "access_role": "owner", "is_opaque": false,
+           "start_minutes": 1080, "end_minutes": 1140},
+          {"title": "Spring Break", "date": "2026-04-20", "time": "all-day",
+           "display_date": "Today", "is_all_day": true,
+           "account": "primary", "calendar": "Family",
+           "access_role": "owner", "is_opaque": false},
+          {"title": "Dentist", "date": "2026-04-20", "time": "2:00 PM",
+           "end_time": "3:00 PM", "display_date": "Today", "display_time": "2pm",
+           "account": "personal", "calendar": "Personal",
+           "access_role": "owner", "is_opaque": false,
+           "start_minutes": 840, "end_minutes": 900},
+          {"title": "Lunch with vendor", "date": "2026-04-20", "time": "2:30 PM",
+           "end_time": "3:30 PM", "display_date": "Today", "display_time": "2:30pm",
+           "account": "primary", "calendar": "Work",
+           "access_role": "owner", "is_opaque": false,
+           "start_minutes": 870, "end_minutes": 930}
+        ],
+        "week_events": [],
+        "conflicts": [
+          {
+            "date": "2026-04-20",
+            "overlap_start_minutes": 570,
+            "overlap_end_minutes": 630,
+            "event_a": {"title": "Strategy review", "time": "9:00 AM", "end_time": "11:00 AM",
+                        "location": "Boardroom", "calendar": "Work",
+                        "account": "primary", "event_id": "s-1", "is_opaque": false},
+            "event_b": {"title": "1:1 with manager", "time": "9:30 AM", "end_time": "10:30 AM",
+                        "location": "Office", "calendar": "Work",
+                        "account": "primary", "event_id": "o-1", "is_opaque": false},
+            "cross_account": false, "both_opaque": false
+          },
+          {
+            "date": "2026-04-20",
+            "overlap_start_minutes": 600,
+            "overlap_end_minutes": 630,
+            "event_a": {"title": "Strategy review", "time": "9:00 AM", "end_time": "11:00 AM",
+                        "location": "Boardroom", "calendar": "Work",
+                        "account": "primary", "event_id": "s-1", "is_opaque": false},
+            "event_b": {"title": "Vendor call", "time": "10:00 AM", "end_time": "10:45 AM",
+                        "location": "Zoom", "calendar": "Work",
+                        "account": "primary", "event_id": "v-1", "is_opaque": false},
+            "cross_account": false, "both_opaque": false
+          },
+          {
+            "date": "2026-04-20",
+            "overlap_start_minutes": 600,
+            "overlap_end_minutes": 630,
+            "event_a": {"title": "1:1 with manager", "time": "9:30 AM", "end_time": "10:30 AM",
+                        "location": "Office", "calendar": "Work",
+                        "account": "primary", "event_id": "o-1", "is_opaque": false},
+            "event_b": {"title": "Vendor call", "time": "10:00 AM", "end_time": "10:45 AM",
+                        "location": "Zoom", "calendar": "Work",
+                        "account": "primary", "event_id": "v-1", "is_opaque": false},
+            "cross_account": false, "both_opaque": false
+          },
+          {
+            "date": "2026-04-20",
+            "overlap_start_minutes": 870,
+            "overlap_end_minutes": 900,
+            "event_a": {"title": "Dentist", "time": "2:00 PM", "end_time": "3:00 PM",
+                        "location": "1500 Main St", "calendar": "Personal",
+                        "account": "personal", "event_id": "d-1", "is_opaque": false},
+            "event_b": {"title": "Lunch with vendor", "time": "2:30 PM", "end_time": "3:30 PM",
+                        "location": "Cafe", "calendar": "Work",
+                        "account": "primary", "event_id": "l-1", "is_opaque": false},
+            "cross_account": true, "both_opaque": false
+          }
+        ],
+        "action_items": [],
+        "reminders": [],
+        "accounts_attempted": ["primary", "personal"],
+        "users": [{"name": "Alex"}],
+        "recent_motivations": ["Make it a great one."]
+      }
+
+  - pattern: "morning_briefing\\.py --log-motivation"
+    response: |
+      {"status": "logged", "kept": 2}
+
+  - pattern: "tasks_update\\.py --tick"
+    response: |
+      {"status": "ticked"}
+
+heartbeat_md: |
+  # Heartbeat Tasks
+
+  RULE 1 — DO NOT WRITE TEXT.
+  RULE 2 — The ONLY way to communicate with users is the message tool.
+  RULE 3 — SKIP means stop.
+  RULE 4 — Empty results mean silence.
+
+  ## User Tasks
+
+  ### Morning briefing
+  Type: system
+  Schedule: 2026-01-01 07:00
+  Recur: every 1 day
+  Recipients: primary:whatsapp
+
+  ## Completed
+
+beats:
+  - actor: alex
+    heartbeat: true
+    message: "Morning briefing (system)"
+    expect:
+      tools_used: ["exec", "message"]
+      message_channels: ["whatsapp"]
+      max_tool_calls: 16
+      message_patterns:
+        # Conflicts section anchor
+        - "(?i)(conflict|double[- ]?book|overlap)"
+        # Three-way pile-up: at least two of the three titles must appear
+        # so we know the morning pile-up surfaced (a single combined line
+        # naming all three is also accepted).
+        - "(?i)strategy review"
+        - "(?i)1:1"
+        - "(?i)vendor call"
+        # Cross-account conflict at 2pm
+        - "(?i)dentist"
+        - "(?i)lunch with vendor"
+        # Account labels for the cross-account case
+        - "(?i)(personal|work|primary)"
+      message_patterns_forbidden:
+        # ── Back-to-back must NOT register as a conflict ────────────
+        # School pickup (5-6pm) and Soccer practice (6-7pm) share an
+        # endpoint but don't overlap. _detect_conflicts excluded them.
+        # The renderer must not fabricate a conflict line about them.
+        - "(?i)school pickup.{0,40}vs.{0,40}soccer"
+        - "(?i)soccer.{0,40}vs.{0,40}school pickup"
+        # ── All-day Spring Break vs timed must NOT register ────────
+        - "(?i)spring break.{0,40}vs.{0,40}strategy"
+        - "(?i)spring break.{0,40}conflict"
+        # Raw schema leaks
+        - "is_opaque"
+        - "both_opaque"
+        - "cross_account"
+        - "start_minutes"
+        - "event_a"
+      tool_sequence:
+        - pattern: "morning_briefing\\.py"
+        - pattern: "tasks_update\\.py --tick"
+    note: >
+      Conflict edges: a three-way 9-10:30am pile-up (Strategy review +
+      1:1 + Vendor call), a back-to-back pair (5pm + 6pm — NOT a
+      conflict), an all-day event alongside timed events (NOT a
+      conflict), and one cross-account conflict at 2pm. The renderer
+      must surface the pile-up and the cross-account conflict, must
+      NOT invent conflicts for the back-to-back or all-day cases.

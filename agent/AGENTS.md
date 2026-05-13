@@ -682,6 +682,8 @@ For each task whose Schedule has passed:
 
   **Per-recipient override:** if the briefing's `users` array has an entry matching this recipient with a `briefing_style`, follow that free-form hint instead of (or layered on top of) the default. Examples: `"dry, no emoji"`, `"plain bullets only"`, `"hype mode"`, `"skip the motivation line"`.
 
+  **Skip stale items (defense in depth):** morning_briefing.py is supposed to filter reminders / events whose date is in the past, but **also check yourself**: if a reminder's `schedule` or an event's `date` is before the briefing's `date`, exclude it from the user-facing message. The user has already lived through that day; reminding them about it is pure noise. This rule is belt-and-suspenders for a tool-layer filter bug (e.g., a reminder without a `schedule` field, or with a malformed schedule, slipping past the pre-filter).
+
   **Motivation line — never repeat:**
   - The briefing JSON includes `recent_motivations` (the last 7 lines Homer has used).
   - Your motivation line MUST be different from every line in `recent_motivations` — no reuse, no near-duplicates.
