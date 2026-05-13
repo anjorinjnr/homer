@@ -106,6 +106,25 @@ class TestEmailDedupe:
             capsys.readouterr()
         assert len(ai._load()) == 1
 
+    def test_subject_case_normalized(self, capsys):
+        ai.cmd_add("email", "Pay", _email_ref(subject="Invoice due"), "today", "")
+        capsys.readouterr()
+        ai.cmd_add("email", "Pay", _email_ref(subject="invoice due"), "today", "")
+        out = json.loads(capsys.readouterr().out)
+        assert out["status"] == "duplicate"
+        assert len(ai._load()) == 1
+
+    def test_reply_forward_prefixes_normalized(self, capsys):
+        ai.cmd_add("email", "Review", _email_ref(subject="Receipt"), "low", "")
+        capsys.readouterr()
+        ai.cmd_add("email", "Review", _email_ref(subject="Re: Receipt"), "low", "")
+        out = json.loads(capsys.readouterr().out)
+        assert out["status"] == "duplicate"
+        ai.cmd_add("email", "Review", _email_ref(subject="Fwd: Re: Receipt"), "low", "")
+        out = json.loads(capsys.readouterr().out)
+        assert out["status"] == "duplicate"
+        assert len(ai._load()) == 1
+
     def test_non_email_sources_do_not_dedupe(self, capsys):
         ai.cmd_add("manual", "Buy milk", {}, "today", "")
         capsys.readouterr()
@@ -193,6 +212,17 @@ class TestComplete:
     def test_not_found_exits(self):
         with pytest.raises(SystemExit):
             ai.cmd_complete("ai_deadbeef")
+
+    def test_complete_is_idempotent(self, capsys):
+        ai.cmd_add("manual", "X", {}, "low", "")
+        eid = ai._load()[0]["id"]
+        ai.cmd_complete(eid)
+        first_completed_at = ai._load()[0]["completed_at"]
+        capsys.readouterr()
+        ai.cmd_complete(eid)
+        out = json.loads(capsys.readouterr().out)
+        assert out["status"] == "already_done"
+        assert ai._load()[0]["completed_at"] == first_completed_at
 
 
 class TestSnooze:

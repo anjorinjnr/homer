@@ -228,6 +228,12 @@ def _conflict_event_view(e: dict) -> dict:
 def _cross_account_dedup_key(e: dict) -> tuple:
     """Best-effort identity for "this is the same calendar event, just
     surfaced on multiple linked accounts." A shared family calendar
+
+    NOTE: This function is intentionally duplicated in
+    `detect_conflicts.py` for the PR-B/PR-C transition window — the brief
+    skill replaces this composer entirely in PR-D, at which point this
+    copy goes away. Update both call sites if either changes meanwhile.
+
     visible to both work and personal accounts would otherwise produce
     two entries that conflict-detection then flags as a cross-account
     overlap with itself.
@@ -318,10 +324,16 @@ def _enrich_reminder(r: dict, today: date) -> dict:
 def _adapt_legacy_action_item(item: dict) -> dict:
     """Map action_items.py's generic schema onto the old (subject, sender,
     action) shape the brief's AGENTS.md rules still render. Falls through
-    untouched if the item already looks legacy-shaped."""
+    untouched if the item already looks legacy-shaped.
+
+    Non-email sources (manual / chat / inference / scope / calendar) have
+    no `subject` in source_ref; leave subject empty rather than copying
+    description into both fields — the rendering rule handles the empty
+    subject case so the brief renders `* description (urgency)` instead
+    of `* description — description (urgency)`."""
     out = dict(item)
     ref = item.get("source_ref") or {}
-    out.setdefault("subject", ref.get("subject", "") or item.get("description", ""))
+    out.setdefault("subject", ref.get("subject", ""))
     out.setdefault("sender", ref.get("sender", ""))
     out.setdefault("action", item.get("description", ""))
     return out

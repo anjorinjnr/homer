@@ -23,13 +23,20 @@ KEEP = 7
 
 
 def _load() -> list[str]:
+    """Return the last KEEP non-blank lines (oldest → newest).
+
+    Defensive trim on read: if the file ever ends up with more than KEEP
+    rows (manual edit, partial-write recovery, concurrent fan-out where
+    two dispatches both appended before either trimmed), only the most
+    recent KEEP are returned so the morning-brief skill never compares
+    today's candidate motivation against an unbounded history."""
     if not MOTIVATIONS_FILE.exists():
         return []
     try:
         lines = MOTIVATIONS_FILE.read_text(encoding="utf-8").splitlines()
     except OSError:
         return []
-    return [ln for ln in lines if ln.strip()]
+    return [ln for ln in lines if ln.strip()][-KEEP:]
 
 
 def append(line: str) -> int:
