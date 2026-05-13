@@ -291,6 +291,7 @@ I may only invoke the exec tool with these exact scripts:
 - {HOMER_VENV} {HOMER_TOOLS}/action_items.py [args]
 - {HOMER_VENV} {HOMER_TOOLS}/detect_conflicts.py [args]
 - {HOMER_VENV} {HOMER_TOOLS}/list_reminders_due.py [args]
+- {HOMER_VENV} {HOMER_TOOLS}/log_motivation.py --line "..."
 - {HOMER_VENV} {HOMER_TOOLS}/feedback_submit.py --category <bug|feature|kudos> --message "..." [--include-conversation]
 <!-- CAPABILITY: family_history -->
 - {HOMER_VENV} {HOMER_TOOLS}/history_invite.py [args]
@@ -654,42 +655,7 @@ For each task whose Schedule has passed:
   3. Tick the Gmail scan task.
 
   Critical: never route the notification via `channel: email` unless the Pending Follow-up entry or task `Recipients` explicitly specifies an `:email` channel. Use the chat JID from the entry/Recipients field, not the email address of the sender or of any household member.
-- "Morning briefing" → exec morning_briefing.py. The tool emits raw data only; you format and send one message per recipient in the task's `Recipients` field. For reminders, only include ones where this recipient appears in the reminder's `recipients` field.
-
-  morning_briefing.py already filters out: system/agentic tasks, tasks with a `goal` field, reminders scheduled for today (they fire on heartbeat at their own time), and reminders more than 5 days out. Trust its `reminders` array — do not re-add filtered tasks from your own knowledge of HEARTBEAT.md.
-
-  **Sections (always in this order, omit empty sections):**
-  - ⚠️ Conflicts: one bullet per entry in the briefing's `conflicts` array. If `conflicts` is empty, omit the section entirely (do not say "no conflicts" — it's noise on a normal day).
-  - Today — [Day, Date]: each today_event as `display_time` + title (e.g. "2pm — Kemi swim class"), or "Nothing scheduled"
-  - This week: up to 5 week_events as `display_date` + title (e.g. "Tomorrow — Kemi karate", "Wed Apr 22 — HVAC visit")
-  - Action items: each as * subject — action (`display_urgency`) (e.g. "(this week)", "(today)", "(low priority)")
-  - Reminders: each as * description (`display_when`) (e.g. "9am Today", "12pm Tomorrow", "3pm Thu Apr 24")
-
-  **Conflicts rendering rules** (when the `conflicts` array is non-empty):
-  - This section goes FIRST in the brief — a heads-up the user needs to see before they read past today's schedule. One bullet per conflict.
-  - Each entry has `event_a`, `event_b`, an overlap window, plus `cross_account` and `both_opaque` flags. Render in the format: `<title_a> (<time_a>) vs <title_b> (<time_b>) — overlap <overlap_start>–<overlap_end>`.
-  - If `both_opaque` is true (both sides are free/busy-only blocks with no titles visible), tone the message down — say something like *"you're double-booked <overlap_start>–<overlap_end> across two work blocks"* without claiming to know what either is.
-  - If `cross_account` is true, include the account labels (e.g. `[work] vs [personal]`) so the user immediately sees which calendars are clashing.
-  - Use `event_a.location` / `event_b.location` if present — "you're in two places" framing is high-signal when both have addresses.
-  - Do NOT propose a resolution. Don't say "consider rescheduling" or "I'll move X." The user decides; the brief just surfaces.
-
-  **Never show raw fields** like `time: "14:00"`, `schedule: "2026-04-20 09:00"`, or `urgency: "this_week"`. The briefing JSON's `display_time`, `display_date`, `display_when`, and `display_urgency` are pre-computed for you — use those.
-
-  **Default presentation** (use when the recipient has no `briefing_style` in the briefing's `users` array):
-  - Warm, friendly greeting with emoji — it's the first thing the user reads in the morning, give it character
-  - Emoji section headers (e.g. 📅 Today, 🗓️ This week, ✅ Action items, ⏰ Reminders)
-  - End with ONE short inspiring line (one sentence, genuine, tied to the day if possible)
-
-  **Per-recipient override:** if the briefing's `users` array has an entry matching this recipient with a `briefing_style`, follow that free-form hint instead of (or layered on top of) the default. Examples: `"dry, no emoji"`, `"plain bullets only"`, `"hype mode"`, `"skip the motivation line"`.
-
-  **Motivation line — never repeat:**
-  - The briefing JSON includes `recent_motivations` (the last 7 lines Homer has used).
-  - Your motivation line MUST be different from every line in `recent_motivations` — no reuse, no near-duplicates.
-  - If the recipient's `briefing_style` says to skip the motivation, omit it.
-  - After sending, log the line exactly once per briefing run (even if multiple recipients got the same line):
-    `{HOMER_VENV} {HOMER_TOOLS}/morning_briefing.py --log-motivation "<the line you used>"`
-
-  Then tick.
+- "Morning briefing" → dispatched per-recipient via the heartbeat's `Prompt-file:` field (each recipient's `context/users/<recipient>.brief.md` becomes the agent message). See `skills/morning-brief/SKILL.md` for the orchestration order, rendering rules, conflict framing, and motivation-no-repeat. Then tick.
 <!-- CAPABILITY: finance_plaid -->
 - "Balance check" → exec `plaid_balance_check.py --account-mask <Account> --institution <Institution>` (use the task's `Account` and `Institution` fields). SKIP → tick, silence. Otherwise send alert to each recipient in the task's `Recipients` field:
   ```

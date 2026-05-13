@@ -36,6 +36,7 @@ Available presets: flash25, flash, pro, sonnet, haiku, default-cheap. Tasks with
 Type: system
 Schedule: 2026-01-01 07:00
 Recur: every 1 day
+Prompt-file: context/users/{{recipient}}.brief.md
 
 ### Check escalations
 Type: system
