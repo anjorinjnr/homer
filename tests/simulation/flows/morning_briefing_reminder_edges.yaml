@@ -1,0 +1,154 @@
+name: "Morning Briefing — Reminder Date Edges (stress)"
+event_id: "sim_morning_briefing_reminder_edges"
+event_name: "Morning Briefing Reminder Edges Simulation"
+model: "gemini/gemini-3.1-pro-preview"
+
+# What this flow proves
+# ─────────────────────
+# Stress test for the brief's reminder handling. Pack many date-edge
+# variants into ONE mock response and assert the agent surfaces only
+# the legitimately-pending ones.
+#
+# Variants packed in (5 reminders):
+#   - Past, well-formed schedule (5 days ago) — the original bug case
+#   - Past, schedule field MISSING entirely — slips past tool-layer filter
+#   - Schedule field is a STRING that's not a date ("TBD") — malformed
+#   - Today-scheduled — fires at its own schedule time via heartbeat,
+#     surfacing in brief is duplication
+#   - Far-future (12 days out) — beyond REMINDER_LOOKAHEAD_DAYS=5
+#   - One valid mid-range (3 days out) — should appear, proves the
+#     agent didn't just silently drop everything
+#
+# Briefing date: 2026-04-20.
+#
+# The agent's rendering layer is the LAST line of defense — even if
+# morning_briefing.py's filter has a bug and emits these stale items,
+# the agent must self-check each reminder's `schedule` and exclude
+# items dated <= today or > 5 days out (per the AGENTS.md
+# "Skip stale items" rule).
+
+mock_tools:
+  - pattern: "morning_briefing\\.py(?! --log-motivation)"
+    response: |
+      {
+        "type": "morning_briefing",
+        "date": "2026-04-20",
+        "today_events": [],
+        "week_events": [],
+        "conflicts": [],
+        "action_items": [],
+        "reminders": [
+          {
+            "description": "Travel to Boston",
+            "schedule": "2026-04-15 09:00",
+            "display_when": "9am Wed Apr 15",
+            "recipients": "14125550001:whatsapp"
+          },
+          {
+            "description": "Submit Q1 expense report",
+            "recipients": "14125550001:whatsapp"
+          },
+          {
+            "description": "Doctor follow-up",
+            "schedule": "TBD",
+            "display_when": "TBD",
+            "recipients": "14125550001:whatsapp"
+          },
+          {
+            "description": "Pick up prescription",
+            "schedule": "2026-04-20 14:00",
+            "display_when": "2pm Today",
+            "recipients": "14125550001:whatsapp"
+          },
+          {
+            "description": "Renew car registration",
+            "schedule": "2026-05-02 09:00",
+            "display_when": "9am Sat May 2",
+            "recipients": "14125550001:whatsapp"
+          },
+          {
+            "description": "Pick up dry cleaning",
+            "schedule": "2026-04-23 17:00",
+            "display_when": "5pm Thu Apr 23",
+            "recipients": "14125550001:whatsapp"
+          }
+        ],
+        "users": [
+          {"name": "Alex"}
+        ],
+        "recent_motivations": ["Make today count."]
+      }
+
+  - pattern: "morning_briefing\\.py --log-motivation"
+    response: |
+      {"status": "logged", "kept": 2}
+
+  - pattern: "tasks_update\\.py --tick"
+    response: |
+      {"status": "ticked"}
+
+heartbeat_md: |
+  # Heartbeat Tasks
+
+  This file is checked every 30 minutes by your nanobot agent.
+
+  ## CRITICAL: Silent Mode Rules
+
+  RULE 1 — DO NOT WRITE TEXT.
+  RULE 2 — The ONLY way to communicate with users is the message tool.
+  RULE 3 — SKIP means stop.
+  RULE 4 — Empty results mean silence.
+
+  ## User Tasks
+
+  ### Morning briefing
+  Type: system
+  Schedule: 2026-01-01 07:00
+  Recur: every 1 day
+  Recipients: primary:whatsapp
+
+  ## Completed
+
+beats:
+  - actor: alex
+    heartbeat: true
+    message: "Morning briefing (system)"
+    expect:
+      tools_used: ["exec", "message"]
+      message_channels: ["whatsapp"]
+      message_channels_forbidden: ["email", "telegram"]
+      max_tool_calls: 16
+      # Only the valid mid-range reminder must appear.
+      message_patterns:
+        - "(?i)dry cleaning"
+        - "(?i)(thu|thursday|apr 23)"
+      message_patterns_forbidden:
+        # Past reminder (5 days ago)
+        - "(?i)travel to boston"
+        - "(?i)\\bboston\\b"
+        - "(?i)apr(il)?\\s*15"
+        # Missing-schedule reminder — should not be assumed "due today"
+        - "(?i)q1 expense"
+        - "(?i)submit q1"
+        # Malformed-schedule reminder — should not be displayed with "TBD"
+        - "(?i)doctor follow"
+        - "\\bTBD\\b"
+        # Today-scheduled reminder — heartbeat fires it on its own
+        - "(?i)pick up prescription"
+        # Far-future reminder (12 days)
+        - "(?i)renew car"
+        - "(?i)may\\s*2"
+        # Raw schema leaks
+        - "schedule:"
+        - "2026-04-15"
+        - "2026-04-20 14:00"
+        - "2026-05-02"
+      tool_sequence:
+        - pattern: "morning_briefing\\.py"
+        - pattern: "tasks_update\\.py --tick"
+    note: >
+      Reminder-date stress: out of six reminders only one is valid
+      (dry cleaning, 3 days out). The other five hit different filter
+      edges — past + missing schedule + malformed schedule + today-
+      scheduled + far-future. The agent must surface only the valid
+      one and rigorously exclude all five edge cases.

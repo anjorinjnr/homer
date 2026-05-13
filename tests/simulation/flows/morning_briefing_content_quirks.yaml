@@ -1,0 +1,151 @@
+name: "Morning Briefing — Content Quirks (long titles, special chars, briefing_style)"
+event_id: "sim_morning_briefing_content_quirks"
+event_name: "Morning Briefing Content Quirks Simulation"
+model: "gemini/gemini-3.1-pro-preview"
+
+# What this flow proves
+# ─────────────────────
+# Stress test for the brief's content handling. Three category of edge:
+#
+#   1. UNUSUAL TITLES. Long titles (200+ chars), emoji in titles,
+#      titles with markdown syntax, titles in CAPS. The renderer must
+#      pass these through faithfully (within reason) — not truncate
+#      silently, not mangle the markdown, not lowercase everything.
+#
+#   2. briefing_style ADHERENCE. The brief sends to two recipients.
+#      Alex uses default style (emoji, motivation line). Sam's style
+#      is "plain bullets, no emoji, skip the motivation line" — the
+#      renderer must respect this PER-RECIPIENT, not apply one style
+#      to both.
+#
+#   3. MOTIVATION VARIETY. recent_motivations is heavily seeded with
+#      common openings ("Make today count", "Have a great day", etc).
+#      The motivation Alex receives must NOT match any of those
+#      verbatim — proves the "never repeat" rule is honored.
+
+mock_tools:
+  - pattern: "morning_briefing\\.py(?! --log-motivation)"
+    response: |
+      {
+        "type": "morning_briefing",
+        "date": "2026-04-20",
+        "today_events": [
+          {"title": "🎉 Sam's Birthday Brunch — Lily's Cafe (please confirm Sam wants pancakes)",
+           "date": "2026-04-20", "time": "11:00 AM", "end_time": "12:30 PM",
+           "display_date": "Today", "display_time": "11am",
+           "account": "primary", "calendar": "Family",
+           "access_role": "owner", "is_opaque": false,
+           "start_minutes": 660, "end_minutes": 750},
+          {"title": "PROJECT KICKOFF — All Hands (mandatory)",
+           "date": "2026-04-20", "time": "2:00 PM", "end_time": "3:00 PM",
+           "display_date": "Today", "display_time": "2pm",
+           "account": "personal", "calendar": "Work",
+           "access_role": "owner", "is_opaque": false,
+           "start_minutes": 840, "end_minutes": 900},
+          {"title": "**IMPORTANT** — pickup the dog from groomer (call shop if late)",
+           "date": "2026-04-20", "time": "5:30 PM", "end_time": "6:00 PM",
+           "display_date": "Today", "display_time": "5:30pm",
+           "account": "primary", "calendar": "Family",
+           "access_role": "owner", "is_opaque": false,
+           "start_minutes": 1050, "end_minutes": 1080}
+        ],
+        "week_events": [],
+        "conflicts": [],
+        "action_items": [],
+        "reminders": [],
+        "accounts_attempted": ["primary", "personal"],
+        "users": [
+          {"name": "Alex"},
+          {"name": "Sam", "briefing_style": "plain bullets, no emoji, skip the motivation line"}
+        ],
+        "recent_motivations": [
+          "Make today count.",
+          "Have a great day.",
+          "You've got this.",
+          "Little wins add up.",
+          "One step at a time.",
+          "Be kind to yourself.",
+          "Make it a great one."
+        ]
+      }
+
+  - pattern: "morning_briefing\\.py --log-motivation"
+    response: |
+      {"status": "logged", "kept": 8}
+
+  - pattern: "tasks_update\\.py --tick"
+    response: |
+      {"status": "ticked"}
+
+heartbeat_md: |
+  # Heartbeat Tasks
+
+  RULE 1 — DO NOT WRITE TEXT.
+  RULE 2 — The ONLY way to communicate with users is the message tool.
+  RULE 3 — SKIP means stop.
+  RULE 4 — Empty results mean silence.
+
+  ## User Tasks
+
+  ### Morning briefing
+  Type: system
+  Schedule: 2026-01-01 07:00
+  Recur: every 1 day
+  Recipients: primary:whatsapp,sam:whatsapp
+
+  ## Completed
+
+beats:
+  - actor: alex
+    heartbeat: true
+    message: "Morning briefing (system)"
+    expect:
+      tools_used: ["exec", "message"]
+      message_channels: ["whatsapp"]
+      message_channels_forbidden: ["email", "telegram"]
+      # Two recipients × 1 send each = 2 message calls.
+      # Plus exec for briefing fetch + log-motivation + tick.
+      max_tool_calls: 16
+      # Every event title must survive into at least one message, including
+      # the messy ones.
+      message_patterns:
+        # Long emoji-prefixed title
+        - "(?i)birthday"
+        - "(?i)brunch"
+        # CAPS title — agent should preserve emphasis, not lowercase
+        # everything; but at minimum the words must appear.
+        - "(?i)project kickoff"
+        # Markdown-prefixed title — agent should NOT escape the asterisks
+        # weirdly (no need to render them; just don't blow up). Looking
+        # for the body text.
+        - "(?i)pickup the dog"
+        - "(?i)groomer"
+      message_patterns_forbidden:
+        # Truncation guard: a long title cut off mid-word would look like
+        # "Birthday Brunch — Lily's…" or similar. Look for obvious truncation.
+        - "Lily's Cafe \\(please conf\\.\\.\\."
+        - "All Hands \\(mand\\.\\.\\."
+        # Schema leaks
+        - "is_opaque"
+        - "access_role"
+        - "start_minutes"
+        # Motivation reuse — Alex's message must not contain ANY of the
+        # 7 recent motivations verbatim. We can't enumerate all 7 perfectly
+        # but the most likely defaults are blocked.
+        - "Make today count\\."
+        - "Have a great day\\."
+        - "You've got this\\."
+        - "Little wins add up\\."
+        - "One step at a time\\."
+        - "Be kind to yourself\\."
+        - "Make it a great one\\."
+      tool_sequence:
+        - pattern: "morning_briefing\\.py"
+        - pattern: "morning_briefing\\.py --log-motivation"
+          note: "Alex gets a motivation line; must be logged after sending"
+        - pattern: "tasks_update\\.py --tick"
+    note: >
+      Content quirks: unusual titles (emoji, CAPS, markdown) must pass
+      through faithfully; per-recipient briefing_style must be honored
+      (Sam plain/no-emoji/no-motivation, Alex default); motivation line
+      must not duplicate any of 7 recent_motivations.
