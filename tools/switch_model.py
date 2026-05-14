@@ -155,13 +155,28 @@ def main() -> None:
     # PID 1 (tini), which exits the container; Docker's restart policy
     # (unless-stopped) brings it back up, and entrypoint.sh re-reads
     # CURRENT_MODEL on boot to render the new config.
+    #
+    # Deferred kill: a bare `os.kill(1, SIGTERM)` runs synchronously and
+    # tears the agent process down BEFORE the current turn's reply gets
+    # flushed to the user — observed in prod on 2026-05-14: "switch to
+    # gemini-balanced" ran the tool, container died, the "Switching to
+    # …" confirmation reply never reached WhatsApp. Spawn a detached
+    # background process that sleeps a few seconds and THEN signals PID 1,
+    # giving the agent loop time to finalize and send its turn output.
+    # `setsid` detaches so this script's exit doesn't terminate the
+    # background sleep along with its session.
     if DOCKERENV.exists():
         print(f"Done. Container will restart to apply {preset['model']}. Send your next message in ~10s.")
         sys.stdout.flush()
         try:
-            os.kill(1, signal.SIGTERM)
+            subprocess.Popen(
+                ["sh", "-c", "sleep 3 && kill -TERM 1"],
+                start_new_session=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
         except PermissionError:
-            print("Could not signal PID 1 — restart the container manually.", file=sys.stderr)
+            print("Could not schedule restart — restart the container manually.", file=sys.stderr)
         return
 
     # systemd is Linux-only; skip gracefully on macOS or other systems

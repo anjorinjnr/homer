@@ -180,27 +180,51 @@ def test_validation_runs_before_config_write(fake_env, monkeypatch, capsys):
     assert not (workspace / "CURRENT_MODEL").exists()
 
 
-def test_container_mode_signals_pid_1_instead_of_systemctl(fake_env, monkeypatch, tmp_path):
-    """In a container (/.dockerenv exists) the script must SIGTERM PID 1 so
-    Docker restarts the container — calling systemctl would silently no-op."""
-    sent = {}
-
-    def fake_kill(pid, sig):
-        sent["pid"] = pid
-        sent["sig"] = sig
-
+def test_container_mode_defers_restart_via_background_kill(fake_env, monkeypatch, tmp_path):
+    """In a container (/.dockerenv exists) the script must NOT call
+    `os.kill(1, SIGTERM)` synchronously — that tears the agent process
+    down before the current turn's reply gets flushed to the user
+    (observed in prod on 2026-05-14). Instead, spawn a detached
+    background process that sleeps a few seconds and signals PID 1
+    afterward, so the agent loop can finish the turn first."""
     fake_dockerenv = tmp_path / ".dockerenv"
     fake_dockerenv.write_text("")
-
     monkeypatch.setattr(sm, "DOCKERENV", fake_dockerenv)
-    monkeypatch.setattr(sm.os, "kill", fake_kill)
 
-    def boom(*a, **kw):
+    # Refuse to call `os.kill` directly — the bug we're fixing.
+    def boom_kill(pid, sig):
+        raise AssertionError(
+            f"os.kill({pid}, {sig}) called synchronously — must defer via "
+            "background subprocess instead"
+        )
+
+    monkeypatch.setattr(sm.os, "kill", boom_kill)
+
+    # `subprocess.run` is the systemd path; container mode must not hit it.
+    def boom_run(*a, **kw):
         raise AssertionError("subprocess.run must not be called in container mode")
 
-    monkeypatch.setattr(sm.subprocess, "run", boom)
+    monkeypatch.setattr(sm.subprocess, "run", boom_run)
+
+    # Capture the deferred-kill subprocess.Popen call.
+    popen_calls: list[dict] = []
+
+    class FakePopen:
+        def __init__(self, args, **kwargs):
+            popen_calls.append({"args": args, "kwargs": kwargs})
+
+    monkeypatch.setattr(sm.subprocess, "Popen", FakePopen)
+
     monkeypatch.setattr("sys.argv", ["switch_model.py", "--model", "claude-balanced"])
     sm.main()
 
-    assert sent["pid"] == 1
-    assert sent["sig"] == sm.signal.SIGTERM
+    assert len(popen_calls) == 1, "expected exactly one deferred-kill subprocess"
+    call = popen_calls[0]
+    # Detached so this script's exit doesn't take the background kill with it.
+    assert call["kwargs"].get("start_new_session") is True
+    # Sleeps before killing — exact duration is implementation detail but
+    # the command must combine a wait with a TERM to PID 1.
+    cmd_str = " ".join(call["args"]) if isinstance(call["args"], list) else call["args"]
+    assert "sleep" in cmd_str
+    assert "kill" in cmd_str
+    assert " 1" in cmd_str  # target PID 1
