@@ -142,7 +142,7 @@ def normalize_event(raw: dict, meta_by_id: dict[str, dict]) -> dict:
     # Note `or "reader"` not `default="reader"` — handles the cal_meta
     # contains explicit None case (gogcli sometimes emits null).
     access_role = cal_meta.get("access_role") or "reader"
-    title = raw.get("summary") or "(no title)"
+    raw_title = raw.get("summary") or ""
     # An event is opaque (no title visible) if either:
     #   - the parent calendar grants only free/busy access, or
     #   - the title is Google's free/busy substitution string. Case-insensitive
@@ -151,8 +151,19 @@ def normalize_event(raw: dict, meta_by_id: dict[str, dict]) -> dict:
     #     we keep the English match but normalize whitespace + case.
     is_opaque = (
         access_role in OPAQUE_ACCESS_ROLES
-        or title.strip().lower() == "busy"
+        or raw_title.strip().lower() == "busy"
     )
+    # Observed in prod: gogcli returns freeBusyReader events with no
+    # `summary` field at all (not even the literal "Busy"), so the bare
+    # "(no title)" fallback leaked into briefs as confusing entries.
+    # Tag opaque-with-empty-title as "(busy)" so the renderer has a
+    # semantic marker; non-opaque empty titles keep legacy behavior.
+    if raw_title:
+        title = raw_title
+    elif is_opaque:
+        title = "(busy)"
+    else:
+        title = "(no title)"
     return {
         "title": title,
         "date": event_date,

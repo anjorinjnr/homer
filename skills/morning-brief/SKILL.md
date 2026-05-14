@@ -89,15 +89,22 @@ action items" — silence is the right signal on a clean day.**
 - This section goes FIRST. It's the heads-up the user needs before they
   read past today's schedule.
 - One bullet per conflict.
-- Format: `<title_a> (<time_a>) vs <title_b> (<time_b>) — overlap <hh:mm>–<hh:mm>`.
-- If `both_opaque` is true (both sides are free/busy-only blocks),
-  tone down: *"you're double-booked <window> across two work blocks"*
-  without claiming to know what either is.
+- Default format: `<title_a> (<time_a>) vs <title_b> (<time_b>) — overlap <hh:mm>–<hh:mm>`.
+- **When exactly ONE side is opaque** (`event_a.is_opaque` xor
+  `event_b.is_opaque`): never render that side's title as `(busy)` or
+  `(no title)` — instead say *"busy block on `<calendar>`"* using
+  `event_X.calendar`. Example: *"Tola Karate (5:30 PM) vs busy block on
+  Work Calendar (5:35 PM) — overlap 5:35 PM–6:00 PM"*. Falls back to
+  *"work block"* if `calendar` is empty.
+- **When BOTH sides are opaque** (`both_opaque: true`): tone down —
+  *"you're double-booked <window> across two work blocks"* without
+  claiming to know what either is.
 - If `cross_account` is true, include account labels (e.g.
   `[work] vs [personal]`) so the user immediately sees which calendars
   are clashing.
 - Use `event_a.location` / `event_b.location` if present — "you're in
-  two places" framing is high-signal when both have addresses.
+  two places" framing is high-signal when both have addresses. Opaque
+  events won't have a location; skip the framing on that side.
 - **Do NOT propose a resolution.** Don't say "consider rescheduling" or
   "I'll move X." The user decides; the brief just surfaces.
 
