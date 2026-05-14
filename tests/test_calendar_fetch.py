@@ -188,6 +188,10 @@ def test_normalize_busy_title_case_and_whitespace_insensitive(busy_form):
     }
     out = cf.normalize_event(raw, {})
     assert out["is_opaque"] is True
+    # The new (busy) placeholder only kicks in for empty titles — a real
+    # "Busy" / "busy" / " Busy " summary must pass through unchanged so we
+    # don't lose the wire-form distinction (helps debugging future variants).
+    assert out["title"] == busy_form
 
 
 def test_normalize_opaque_empty_title_uses_busy_placeholder():
