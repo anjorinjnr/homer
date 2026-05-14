@@ -357,6 +357,37 @@ def _call_llm(prompt: str, model: str, provider: str) -> str:
             )
             rec.record(input_tokens=in_tok, output_tokens=out_tok, cache_read_tokens=cache_tok)
         return response.text.strip() if response.text else ""
+    elif provider == "openrouter":
+        try:
+            import openai
+        except ImportError:
+            print(json.dumps({"error": "Missing openai. Run: pip install openai"}))
+            sys.exit(1)
+        api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        if not api_key:
+            print(json.dumps({"error": "OPENROUTER_API_KEY not set"}))
+            sys.exit(1)
+        client = openai.OpenAI(api_key=api_key, base_url="https://openrouter.ai/api/v1")
+        with _llm_call(
+            model=model, provider="openrouter", task_kind="tool_classifier",
+            extra={"tool": "gmail_fetch"},
+        ) as rec:
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    max_tokens=2048,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+            except Exception as e:
+                print(json.dumps({"error": f"OpenRouter API call failed: {e}"}))
+                sys.exit(1)
+            usage = getattr(response, "usage", None)
+            in_tok = getattr(usage, "prompt_tokens", 0) or 0
+            out_tok = getattr(usage, "completion_tokens", 0) or 0
+            details = getattr(usage, "prompt_tokens_details", None)
+            cache_tok = getattr(details, "cached_tokens", 0) or 0
+            rec.record(input_tokens=in_tok, output_tokens=out_tok, cache_read_tokens=cache_tok)
+        return response.choices[0].message.content.strip() if response.choices else ""
     else:
         print(json.dumps({"error": f"Unsupported provider '{provider}'"}))
         sys.exit(1)

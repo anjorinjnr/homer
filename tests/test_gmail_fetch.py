@@ -214,9 +214,36 @@ class TestCallLlm:
             model="gemini-3-pro", contents="test"
         )
 
+    def test_openrouter_call(self):
+        mock_message = MagicMock(content="  routed  ")
+        mock_choice = MagicMock(message=mock_message)
+        mock_response = MagicMock(choices=[mock_choice], usage=None)
+        mock_openai_module = MagicMock()
+        mock_openai_module.OpenAI.return_value.chat.completions.create.return_value = mock_response
+        with patch.dict("sys.modules", {"openai": mock_openai_module}):
+            with patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"}):
+                result = gf._call_llm("test", "google/gemini-2.5-pro", "openrouter")
+        assert result == "routed"
+        mock_openai_module.OpenAI.assert_called_once_with(
+            api_key="test-key", base_url="https://openrouter.ai/api/v1"
+        )
+        mock_openai_module.OpenAI.return_value.chat.completions.create.assert_called_once_with(
+            model="google/gemini-2.5-pro",
+            max_tokens=2048,
+            messages=[{"role": "user", "content": "test"}],
+        )
+
+    def test_openrouter_missing_key_exits(self):
+        mock_openai_module = MagicMock()
+        with patch.dict("sys.modules", {"openai": mock_openai_module}):
+            with patch.dict("os.environ", {}, clear=True):
+                with pytest.raises(SystemExit) as exc_info:
+                    gf._call_llm("test", "google/gemini-2.5-pro", "openrouter")
+        assert exc_info.value.code == 1
+
     def test_unsupported_provider_exits(self):
         with pytest.raises(SystemExit) as exc_info:
-            gf._call_llm("test", "some-model", "openai")
+            gf._call_llm("test", "some-model", "cohere")
         assert exc_info.value.code == 1
 
 
