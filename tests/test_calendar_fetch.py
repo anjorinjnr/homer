@@ -188,6 +188,50 @@ def test_normalize_busy_title_case_and_whitespace_insensitive(busy_form):
     }
     out = cf.normalize_event(raw, {})
     assert out["is_opaque"] is True
+    # The new (busy) placeholder only kicks in for empty titles — a real
+    # "Busy" / "busy" / " Busy " summary must pass through unchanged so we
+    # don't lose the wire-form distinction (helps debugging future variants).
+    assert out["title"] == busy_form
+
+
+def test_normalize_opaque_empty_title_uses_busy_placeholder():
+    """Production case: gogcli returns events from a freeBusyReader
+    calendar with no `summary` field at all (not even the literal "Busy").
+    These had been falling through to "(no title)" and leaking into the
+    user-facing brief as confusing entries. The synthetic "(busy)" tag
+    signals to the rendering layer that this is an opaque block, not a
+    real titled event."""
+    raw = {
+        "id": "wrk-blk-1",
+        # No summary key at all — observed shape from freeBusyReader cals.
+        "start": {"dateTime": "2026-05-04T17:35:00-04:00"},
+        "end": {"dateTime": "2026-05-04T18:00:00-04:00"},
+        "CalendarID": "shared-work",
+    }
+    out = cf.normalize_event(
+        raw, _cal_meta("shared-work", "Work Calendar", access_role="freeBusyReader")
+    )
+    assert out["is_opaque"] is True
+    assert out["title"] == "(busy)"
+
+
+def test_normalize_non_opaque_empty_title_still_no_title():
+    """A non-opaque calendar (full reader access) with a genuinely
+    missing title is rare but not the same case — leave the legacy
+    "(no title)" fallback in place so we don't change behavior for
+    fully-readable events that happen to lack a title."""
+    raw = {
+        "id": "ev-x",
+        # No summary — but on a reader-level calendar.
+        "start": {"dateTime": "2026-05-04T09:00:00-04:00"},
+        "end": {"dateTime": "2026-05-04T10:00:00-04:00"},
+        "CalendarID": "team",
+    }
+    out = cf.normalize_event(
+        raw, _cal_meta("team", "Team", access_role="reader")
+    )
+    assert out["is_opaque"] is False
+    assert out["title"] == "(no title)"
 
 
 def test_normalize_handles_null_access_role_in_metadata():
