@@ -48,7 +48,7 @@ def run_switch(model: str, fake_env, monkeypatch) -> None:
 
 def test_switch_updates_config(fake_env, monkeypatch):
     config_path, _ = fake_env
-    run_switch("balanced-claude", fake_env, monkeypatch)
+    run_switch("claude-balanced", fake_env, monkeypatch)
     config = json.loads(config_path.read_text())
     assert config["agents"]["defaults"]["model"] == "anthropic/claude-sonnet-4.6"
     # Every preset now routes via OpenRouter — providers field reflects that
@@ -58,15 +58,15 @@ def test_switch_updates_config(fake_env, monkeypatch):
 
 def test_switch_writes_current_model_file(fake_env, monkeypatch):
     _, workspace = fake_env
-    run_switch("balanced-claude", fake_env, monkeypatch)
+    run_switch("claude-balanced", fake_env, monkeypatch)
     current = (workspace / "CURRENT_MODEL").read_text()
     assert current == "anthropic/claude-sonnet-4.6"
 
 
 def test_switch_updates_current_model_on_second_switch(fake_env, monkeypatch):
     _, workspace = fake_env
-    run_switch("fast-gemini", fake_env, monkeypatch)
-    run_switch("fast-claude", fake_env, monkeypatch)
+    run_switch("gemini-fast", fake_env, monkeypatch)
+    run_switch("claude-fast", fake_env, monkeypatch)
     current = (workspace / "CURRENT_MODEL").read_text()
     assert current == "anthropic/claude-haiku-4.5"
 
@@ -111,7 +111,7 @@ def test_switch_to_any_preset_without_openrouter_key_exits_1(
     so the script must refuse and name the missing variable."""
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.setattr(
-        "sys.argv", ["switch_model.py", "--model", "fast-claude", "--no-restart"]
+        "sys.argv", ["switch_model.py", "--model", "claude-fast", "--no-restart"]
     )
     with pytest.raises(SystemExit) as exc:
         sm.main()
@@ -132,7 +132,7 @@ def test_switch_to_openrouter_preset_with_key_succeeds(fake_env, monkeypatch):
     """
     config_path, workspace = fake_env
     monkeypatch.setattr(
-        "sys.argv", ["switch_model.py", "--model", "fast-claude", "--no-restart"]
+        "sys.argv", ["switch_model.py", "--model", "claude-fast", "--no-restart"]
     )
     sm.main()
     config = json.loads(config_path.read_text())
@@ -172,7 +172,7 @@ def test_validation_runs_before_config_write(fake_env, monkeypatch, capsys):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.setattr(
         "sys.argv",
-        ["switch_model.py", "--model", "balanced-claude", "--no-restart"],
+        ["switch_model.py", "--model", "claude-balanced", "--no-restart"],
     )
     with pytest.raises(SystemExit):
         sm.main()
@@ -199,7 +199,7 @@ def test_container_mode_signals_pid_1_instead_of_systemctl(fake_env, monkeypatch
         raise AssertionError("subprocess.run must not be called in container mode")
 
     monkeypatch.setattr(sm.subprocess, "run", boom)
-    monkeypatch.setattr("sys.argv", ["switch_model.py", "--model", "balanced-claude"])
+    monkeypatch.setattr("sys.argv", ["switch_model.py", "--model", "claude-balanced"])
     sm.main()
 
     assert sent["pid"] == 1

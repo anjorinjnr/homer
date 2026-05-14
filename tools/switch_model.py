@@ -91,17 +91,17 @@ MODELS = {
     "auto":             {"model": "openrouter/auto",               "provider": "openrouter"},
     "cheap":            {"model": "deepseek/deepseek-v3.2",        "provider": "openrouter"},
 
-    "fast-gemini":      {"model": "google/gemini-2.5-flash",       "provider": "openrouter"},
-    "fast-gpt":         {"model": "openai/gpt-5-mini",             "provider": "openrouter"},
-    "fast-claude":      {"model": "anthropic/claude-haiku-4.5",    "provider": "openrouter"},
+    "gemini-fast":      {"model": "google/gemini-2.5-flash",       "provider": "openrouter"},
+    "gemini-balanced":  {"model": "google/gemini-2.5-pro",         "provider": "openrouter"},
+    "gemini-smart":     {"model": "google/gemini-3.1-pro-preview", "provider": "openrouter"},
 
-    "balanced-gemini":  {"model": "google/gemini-2.5-pro",         "provider": "openrouter"},
-    "balanced-gpt":     {"model": "openai/gpt-5",                  "provider": "openrouter"},
-    "balanced-claude":  {"model": "anthropic/claude-sonnet-4.6",   "provider": "openrouter"},
+    "gpt-fast":         {"model": "openai/gpt-5-mini",             "provider": "openrouter"},
+    "gpt-balanced":     {"model": "openai/gpt-5",                  "provider": "openrouter"},
+    "gpt-smart":        {"model": "openai/gpt-5.5",                "provider": "openrouter"},
 
-    "smart-gemini":     {"model": "google/gemini-3.1-pro-preview", "provider": "openrouter"},
-    "smart-gpt":        {"model": "openai/gpt-5.5",                "provider": "openrouter"},
-    "smart-claude":     {"model": "anthropic/claude-opus-4.7",     "provider": "openrouter"},
+    "claude-fast":      {"model": "anthropic/claude-haiku-4.5",    "provider": "openrouter"},
+    "claude-balanced":  {"model": "anthropic/claude-sonnet-4.6",   "provider": "openrouter"},
+    "claude-smart":     {"model": "anthropic/claude-opus-4.7",     "provider": "openrouter"},
 
     # Internal alias retained for the default-tier heartbeat path (used by
     # render_household_env when HOMER_HEARTBEAT_MODEL is unset). Same SKU

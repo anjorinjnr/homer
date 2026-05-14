@@ -689,9 +689,9 @@ def main() -> None:
         help=(
             "Model preset (for --add or --edit). All route via OpenRouter. "
             "Pick one of: auto, cheap, "
-            "fast-gemini, fast-gpt, fast-claude, "
-            "balanced-gemini, balanced-gpt, balanced-claude, "
-            "smart-gemini, smart-gpt, smart-claude. "
+            "gemini-fast, gpt-fast, claude-fast, "
+            "gemini-balanced, gpt-balanced, claude-balanced, "
+            "gemini-smart, gpt-smart, claude-smart. "
             "Use `auto` for simple reminders so OR picks the cheapest "
             "viable model per call. See switch_model.py:MODELS."
         ),
