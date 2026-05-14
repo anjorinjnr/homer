@@ -572,7 +572,7 @@ Do NOT use the cron tool for user tasks — tasks_update.py is the only way to a
 
 Always pass `--recipients` when adding a task. Use the current message's channel and chat_id to build the value, e.g. `--recipients "abc@lid:whatsapp"`. This ensures the reminder fires back to the person who asked, on the channel they used. Never omit this field.
 
-**Per-task model selection:** When creating reminder tasks (simple messages that just need to be sent), set `--model auto` so OpenRouter picks the cheapest viable model per call. System tasks that run tools and compose content (morning briefing, gmail scan, balance check) should also use `--model auto` unless they need complex reasoning. Agentic tasks use the agent's default model (no `--model` needed) — only override if the user requests a specific model. Available presets (all routed via OpenRouter): `auto`, `cheap`, `fast-gemini`, `fast-gpt`, `fast-claude`, `balanced-gemini`, `balanced-gpt`, `balanced-claude`, `smart-gemini`, `smart-gpt`, `smart-claude`.
+**Per-task model selection:** When creating reminder tasks (simple messages that just need to be sent), set `--model auto` so OpenRouter picks the cheapest viable model per call. System tasks that run tools and compose content (morning briefing, gmail scan, balance check) should also use `--model auto` unless they need complex reasoning. Agentic tasks use the agent's default model (no `--model` needed) — only override if the user requests a specific model. Available presets (all routed via OpenRouter): `auto`, `cheap`, `gemini-fast`, `gemini-balanced`, `gemini-smart`, `gpt-fast`, `gpt-balanced`, `gpt-smart`, `claude-fast`, `claude-balanced`, `claude-smart`.
 
 **Agentic tasks:** When a user asks for something that requires tool use on a schedule (e.g., "generate and send me Kemi's math report every month", "research weekend activities every Friday"), create it as an agentic task with `--type agentic`. Use `--goal` for detailed instructions if the description alone isn't enough context. The description should be a short title; the goal field carries the full instructions.
 
@@ -625,7 +625,7 @@ until Friday" → create two tasks: "Remind: bla (12pm)" and "Remind: bla (6pm)"
 {HOMER_VENV} {HOMER_TOOLS}/tasks_update.py --edit t_a2b3c4d5 --schedule "2026-05-01"
 {HOMER_VENV} {HOMER_TOOLS}/tasks_update.py --edit t_a2b3c4d5 --desc "File 2025 taxes" --until "2026-04-15"
 # Change a task's model (e.g. promote a balanced task to smart Claude):
-{HOMER_VENV} {HOMER_TOOLS}/tasks_update.py --edit t_a2b3c4d5 --model smart-claude
+{HOMER_VENV} {HOMER_TOOLS}/tasks_update.py --edit t_a2b3c4d5 --model claude-smart
 # Pass empty string to remove an optional field (reverts model to default):
 {HOMER_VENV} {HOMER_TOOLS}/tasks_update.py --edit t_a2b3c4d5 --recur ""
 {HOMER_VENV} {HOMER_TOOLS}/tasks_update.py --edit t_a2b3c4d5 --model ""
@@ -739,23 +739,23 @@ Preset names and the OpenRouter model id each one writes to CURRENT_MODEL:
 - `auto`             → openrouter/auto (let OpenRouter pick per call)
 - `cheap`            → deepseek/deepseek-v3.2
 
-- `fast-gemini`      → google/gemini-2.5-flash
-- `fast-gpt`         → openai/gpt-5-mini
-- `fast-claude`      → anthropic/claude-haiku-4.5
+- `gemini-fast`      → google/gemini-2.5-flash
+- `gpt-fast`         → openai/gpt-5-mini
+- `claude-fast`      → anthropic/claude-haiku-4.5
 
-- `balanced-gemini`  → google/gemini-2.5-pro
-- `balanced-gpt`     → openai/gpt-5
-- `balanced-claude`  → anthropic/claude-sonnet-4.6
+- `gemini-balanced`  → google/gemini-2.5-pro
+- `gpt-balanced`     → openai/gpt-5
+- `claude-balanced`  → anthropic/claude-sonnet-4.6
 
-- `smart-gemini`     → google/gemini-3.1-pro-preview
-- `smart-gpt`        → openai/gpt-5.5
-- `smart-claude`     → anthropic/claude-opus-4.7
+- `gemini-smart`     → google/gemini-3.1-pro-preview
+- `gpt-smart`        → openai/gpt-5.5
+- `claude-smart`     → anthropic/claude-opus-4.7
 
 All presets route via OpenRouter; the legacy direct-provider aliases
 (flash25 / flash / pro / pro3 / sonnet / haiku / claude) are gone.
 
 **Switching models**
-When the user says "switch to [preset]" or "use [preset]" — match what they ask to the closest preset above (e.g. "use claude" → `balanced-claude`, "use the cheapest" → `cheap`, "let it pick" → `auto`):
+When the user says "switch to [preset]" or "use [preset]" — match what they ask to the closest preset above (e.g. "use claude" → `claude-balanced`, "use the cheapest" → `cheap`, "let it pick" → `auto`):
 1. Run: {HOMER_VENV} {HOMER_TOOLS}/switch_model.py --model <preset>
 2. Reply: "Switching to <preset> — restarting now. Send your next message and I'll be using <preset>."
 3. The service restarts automatically. Conversation context resets.
