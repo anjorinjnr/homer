@@ -170,28 +170,53 @@ class TestValidate:
 
 
 class TestResolveApiKey:
-    def test_prefers_analytics_key_when_both_set(self, monkeypatch):
+    """Resolution order after the OpenRouter consolidation:
+
+      1. LLM_SYSTEM_API_KEY              → OpenRouter (system bucket)
+      2. HOMER_ANALYTICS_GEMINI_API_KEY  → direct Gemini (legacy)
+      3. GEMINI_API_KEY                  → direct Gemini (dev/local)
+    """
+
+    @staticmethod
+    def _clear(monkeypatch):
+        for v in (
+            "LLM_SYSTEM_API_KEY",
+            "HOMER_ANALYTICS_GEMINI_API_KEY",
+            "GEMINI_API_KEY",
+        ):
+            monkeypatch.delenv(v, raising=False)
+
+    def test_llm_system_key_wins(self, monkeypatch):
+        self._clear(monkeypatch)
+        monkeypatch.setenv("LLM_SYSTEM_API_KEY", "sk-or-v1-system")
+        monkeypatch.setenv("HOMER_ANALYTICS_GEMINI_API_KEY", "homer_owned")
+        monkeypatch.setenv("GEMINI_API_KEY", "tenant_owned")
+        assert _resolve_api_key() == "sk-or-v1-system"
+
+    def test_prefers_analytics_key_when_llm_system_unset(self, monkeypatch):
+        self._clear(monkeypatch)
         monkeypatch.setenv("HOMER_ANALYTICS_GEMINI_API_KEY", "homer_owned")
         monkeypatch.setenv("GEMINI_API_KEY", "tenant_owned")
         assert _resolve_api_key() == "homer_owned"
 
-    def test_falls_back_to_tenant_key_when_analytics_unset(self, monkeypatch):
-        monkeypatch.delenv("HOMER_ANALYTICS_GEMINI_API_KEY", raising=False)
+    def test_falls_back_to_tenant_key_when_others_unset(self, monkeypatch):
+        self._clear(monkeypatch)
         monkeypatch.setenv("GEMINI_API_KEY", "tenant_owned")
         assert _resolve_api_key() == "tenant_owned"
 
-    def test_returns_empty_when_neither_set(self, monkeypatch):
-        monkeypatch.delenv("HOMER_ANALYTICS_GEMINI_API_KEY", raising=False)
-        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    def test_returns_empty_when_nothing_set(self, monkeypatch):
+        self._clear(monkeypatch)
         assert _resolve_api_key() == ""
 
     def test_strips_whitespace(self, monkeypatch):
-        monkeypatch.setenv("HOMER_ANALYTICS_GEMINI_API_KEY", "  padded  ")
-        assert _resolve_api_key() == "padded"
+        self._clear(monkeypatch)
+        monkeypatch.setenv("LLM_SYSTEM_API_KEY", "  sk-or-v1-padded  ")
+        assert _resolve_api_key() == "sk-or-v1-padded"
 
-    def test_blank_analytics_key_falls_back(self, monkeypatch):
-        # An accidentally-empty HOMER_ANALYTICS_GEMINI_API_KEY (e.g. set to
-        # "" in a deploy script) must not blackhole the classifier.
-        monkeypatch.setenv("HOMER_ANALYTICS_GEMINI_API_KEY", "   ")
-        monkeypatch.setenv("GEMINI_API_KEY", "tenant_owned")
-        assert _resolve_api_key() == "tenant_owned"
+    def test_blank_higher_priority_key_falls_through(self, monkeypatch):
+        # An accidentally-empty higher-priority key (e.g. set to "" in a
+        # deploy script) must not blackhole the classifier.
+        self._clear(monkeypatch)
+        monkeypatch.setenv("LLM_SYSTEM_API_KEY", "   ")
+        monkeypatch.setenv("HOMER_ANALYTICS_GEMINI_API_KEY", "homer_owned")
+        assert _resolve_api_key() == "homer_owned"
