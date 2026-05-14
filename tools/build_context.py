@@ -558,7 +558,7 @@ def _resolve_heartbeat_model_default() -> str | None:
       tiers never get the heartbeat-default stamp.
     - HOMER_HEARTBEAT_MODEL must be set and non-empty. Its value is used
       verbatim as the Model field (typically a preset name like "default-cheap"
-      or "flash25"; any string is accepted because nanobot/litellm will resolve
+      or "auto"; any string is accepted because nanobot/litellm will resolve
       it the same way switch_model.py does).
     - All other tier values (byok, managed, unset) → no stamp.
     """
