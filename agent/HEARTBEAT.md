@@ -30,7 +30,7 @@ Reminder tasks (no Type): send message with the task description, then tick.
 When calling `tasks_update.py --tick / --complete / --remove / --edit`, pass the task's `Id:` value (e.g. `t_a2b3c4d5`) as the keyword, never the title. Each task block has an `Id:` line directly beneath its heading.
 
 Model field (optional): overrides the LLM model for this task's execution.
-Available presets: flash25, flash, pro, sonnet, haiku, default-cheap. Tasks without a Model field use the agent's default model.
+Available presets (all routed via OpenRouter): auto, cheap, fast-gemini, fast-gpt, fast-claude, balanced-gemini, balanced-gpt, balanced-claude, smart-gemini, smart-gpt, smart-claude, default-cheap. Tasks without a Model field use the agent's default model. Prefer `auto` for simple reminder tasks so OpenRouter picks the cheapest viable model per call.
 
 ### Morning briefing
 Type: system
