@@ -79,12 +79,42 @@ def _validate_provider_credentials(preset_name: str, provider: str) -> None:
 
 
 MODELS = {
+    # ── Legacy direct-provider presets ───────────────────────────────────
+    # Pre-OpenRouter-consolidation: each preset routed to the named vendor
+    # via its own SDK using ANTHROPIC_API_KEY / GEMINI_API_KEY. Kept in
+    # place during the transition so existing tenants' CURRENT_MODEL files
+    # keep resolving. Slated for removal once every household has migrated
+    # to one of the new openrouter-routed presets below — see
+    # [[project_openrouter_consolidation]] for the preset slate.
     "flash25":       {"model": "gemini/gemini-2.5-flash",                  "provider": "gemini"},
     "flash":         {"model": "gemini/gemini-3-flash-preview",            "provider": "gemini"},
     "pro":           {"model": "gemini/gemini-3.1-pro-preview",            "provider": "gemini"},
     "sonnet":        {"model": "claude-sonnet-4-6",                        "provider": "anthropic"},
     "haiku":         {"model": "claude-haiku-4-5-20251001",                "provider": "anthropic"},
     "claude":        {"model": "claude-sonnet-4-6",                        "provider": "anthropic"},
+
+    # ── OpenRouter-routed presets (post-consolidation canonical slate) ──
+    # All eleven go through `provider="openrouter"` — chat + heartbeats
+    # bill to the household's OR sub-key, OR dispatches upstream based on
+    # the `<vendor>/<model>` prefix in the model id. `auto` defers to OR's
+    # per-request routing; `cheap` pins deepseek-v3.2. The other nine are
+    # a 3-tier × 3-vendor grid so admins pick "how smart" × "which vendor"
+    # without browsing OR's full catalog.
+    #
+    # Kept in lockstep with homer-portal/backend/services/config_service.py
+    # MODEL_PRESETS — both must agree on the label set.
+    "auto":             {"model": "openrouter/auto",                       "provider": "openrouter"},
+    "cheap":            {"model": "deepseek/deepseek-v3.2",                "provider": "openrouter"},
+    "fast-gemini":      {"model": "google/gemini-2.5-flash",               "provider": "openrouter"},
+    "fast-gpt":         {"model": "openai/gpt-5-mini",                     "provider": "openrouter"},
+    "fast-claude":      {"model": "anthropic/claude-haiku-4.5",            "provider": "openrouter"},
+    "balanced-gemini":  {"model": "google/gemini-2.5-pro",                 "provider": "openrouter"},
+    "balanced-gpt":     {"model": "openai/gpt-5",                          "provider": "openrouter"},
+    "balanced-claude":  {"model": "anthropic/claude-sonnet-4.6",           "provider": "openrouter"},
+    "smart-gemini":     {"model": "google/gemini-3.1-pro-preview",         "provider": "openrouter"},
+    "smart-gpt":        {"model": "openai/gpt-5.5",                        "provider": "openrouter"},
+    "smart-claude":     {"model": "anthropic/claude-opus-4.7",             "provider": "openrouter"},
+
     # default-cheap: heartbeat work on default-tier (managed-key) containers.
     #
     # Contract: `provider="openrouter"` here is consumed by `switch_model.py`
