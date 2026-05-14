@@ -90,6 +90,19 @@ def test_default_cheap_preset_has_valid_model_id():
     assert sm.MODELS["default-cheap"]["provider"] == "openrouter"
 
 
+def test_every_preset_routes_via_openrouter():
+    """Invariant lock — post-consolidation, no direct-provider entries
+    are allowed in MODELS. A future contributor adding e.g. a raw
+    Anthropic preset would silently bypass per-tenant OR cost
+    attribution; this test forces the consolidation discussion to
+    happen at PR time."""
+    for name, spec in sm.MODELS.items():
+        assert spec["provider"] == "openrouter", (
+            f"preset {name!r} must route via openrouter post-consolidation "
+            f"(got provider={spec['provider']!r})"
+        )
+
+
 def test_switch_to_any_preset_without_openrouter_key_exits_1(
     fake_env, monkeypatch, capsys
 ):
@@ -109,10 +122,15 @@ def test_switch_to_any_preset_without_openrouter_key_exits_1(
 
 def test_switch_to_openrouter_preset_with_key_succeeds(fake_env, monkeypatch):
     """With `OPENROUTER_API_KEY` set (the only key any preset needs now),
-    every preset switch lands and writes the configured model id."""
+    every preset switch lands and writes the configured model id.
+
+    ANTHROPIC_API_KEY / GEMINI_API_KEY are deliberately left untouched —
+    no preset reads those env vars after consolidation, so deleting them
+    here would just be noise. (Earlier versions of this test deleted them
+    because some legacy presets required specific direct-provider keys;
+    that requirement is gone.)
+    """
     config_path, workspace = fake_env
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setattr(
         "sys.argv", ["switch_model.py", "--model", "fast-claude", "--no-restart"]
     )
