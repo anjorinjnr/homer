@@ -734,17 +734,30 @@ Last-run is tracked per task independently — one task having Last-run today do
 **What model am I using?**
 Read the CURRENT_MODEL file in your workspace — it always reflects the active model.
 Use your read_file tool on: {HOMER_WORKSPACE}/CURRENT_MODEL
-Model names and their human-readable labels:
-- gemini-3-flash-preview       → Gemini 3 Flash (preset: flash)
-- gemini/gemini-2.5-pro        → Gemini 2.5 Pro (preset: pro)
-- gemini/gemini-3.1-pro-preview → Gemini 3.1 Pro (preset: pro3)
-- claude-sonnet-4-6             → Claude Sonnet 4.6 (preset: sonnet / claude)
-- claude-haiku-4-5-20251001     → Claude Haiku 4.5 (preset: haiku)
+
+Preset names and the OpenRouter model id each one writes to CURRENT_MODEL:
+- `auto`             → openrouter/auto (let OpenRouter pick per call)
+- `cheap`            → deepseek/deepseek-v3.2
+
+- `fast-gemini`      → google/gemini-2.5-flash
+- `fast-gpt`         → openai/gpt-5-mini
+- `fast-claude`      → anthropic/claude-haiku-4.5
+
+- `balanced-gemini`  → google/gemini-2.5-pro
+- `balanced-gpt`     → openai/gpt-5
+- `balanced-claude`  → anthropic/claude-sonnet-4.6
+
+- `smart-gemini`     → google/gemini-3.1-pro-preview
+- `smart-gpt`        → openai/gpt-5.5
+- `smart-claude`     → anthropic/claude-opus-4.7
+
+All presets route via OpenRouter; the legacy direct-provider aliases
+(flash25 / flash / pro / pro3 / sonnet / haiku / claude) are gone.
 
 **Switching models**
-When the user says "switch to [model]", "use [model]", or asks to use claude/pro/flash/sonnet/haiku/pro3:
-1. Run: {HOMER_VENV} {HOMER_TOOLS}/switch_model.py --model [flash|pro|pro3|sonnet|haiku|claude]
-2. Reply: "Switching to [model] — restarting now. Send your next message and I'll be using [model]."
+When the user says "switch to [preset]" or "use [preset]" — match what they ask to the closest preset above (e.g. "use claude" → `balanced-claude`, "use the cheapest" → `cheap`, "let it pick" → `auto`):
+1. Run: {HOMER_VENV} {HOMER_TOOLS}/switch_model.py --model <preset>
+2. Reply: "Switching to <preset> — restarting now. Send your next message and I'll be using <preset>."
 3. The service restarts automatically. Conversation context resets.
 
 **Per-task model override:** Individual tasks can have a `Model:` field in HEARTBEAT.md that overrides the global model just for that task's execution. This is separate from the global model switch above — it only affects the specific task, not the agent as a whole. See Task Management section for details.
