@@ -48,32 +48,39 @@ def run_switch(model: str, fake_env, monkeypatch) -> None:
 
 def test_switch_updates_config(fake_env, monkeypatch):
     config_path, _ = fake_env
-    run_switch("sonnet", fake_env, monkeypatch)
+    run_switch("balanced-claude", fake_env, monkeypatch)
     config = json.loads(config_path.read_text())
-    assert config["agents"]["defaults"]["model"] == "claude-sonnet-4-6"
-    assert config["agents"]["defaults"]["provider"] == "anthropic"
+    assert config["agents"]["defaults"]["model"] == "anthropic/claude-sonnet-4.6"
+    # Every preset now routes via OpenRouter — providers field reflects that
+    # uniformly, regardless of which upstream model the preset names.
+    assert config["agents"]["defaults"]["provider"] == "openrouter"
 
 
 def test_switch_writes_current_model_file(fake_env, monkeypatch):
     _, workspace = fake_env
-    run_switch("sonnet", fake_env, monkeypatch)
+    run_switch("balanced-claude", fake_env, monkeypatch)
     current = (workspace / "CURRENT_MODEL").read_text()
-    assert current == "claude-sonnet-4-6"
+    assert current == "anthropic/claude-sonnet-4.6"
 
 
 def test_switch_updates_current_model_on_second_switch(fake_env, monkeypatch):
     _, workspace = fake_env
-    run_switch("flash", fake_env, monkeypatch)
-    run_switch("haiku", fake_env, monkeypatch)
+    run_switch("fast-gemini", fake_env, monkeypatch)
+    run_switch("fast-claude", fake_env, monkeypatch)
     current = (workspace / "CURRENT_MODEL").read_text()
-    assert current == "claude-haiku-4-5-20251001"
+    assert current == "anthropic/claude-haiku-4.5"
 
 
-def test_claude_alias_resolves_to_sonnet(fake_env, monkeypatch):
-    _, workspace = fake_env
-    run_switch("claude", fake_env, monkeypatch)
-    current = (workspace / "CURRENT_MODEL").read_text()
-    assert current == "claude-sonnet-4-6"
+def test_auto_preset_lets_openrouter_route(fake_env, monkeypatch):
+    """`auto` is the recommended default for reminder tasks — it writes
+    `openrouter/auto` so OpenRouter picks the cheapest viable model per
+    request rather than pinning a specific SKU."""
+    config_path, workspace = fake_env
+    run_switch("auto", fake_env, monkeypatch)
+    config = json.loads(config_path.read_text())
+    assert config["agents"]["defaults"]["model"] == "openrouter/auto"
+    assert config["agents"]["defaults"]["provider"] == "openrouter"
+    assert (workspace / "CURRENT_MODEL").read_text() == "openrouter/auto"
 
 
 def test_default_cheap_preset_has_valid_model_id():
@@ -83,33 +90,54 @@ def test_default_cheap_preset_has_valid_model_id():
     assert sm.MODELS["default-cheap"]["provider"] == "openrouter"
 
 
-def test_switch_to_provider_without_key_exits_1(fake_env, monkeypatch, capsys):
-    """Default-tier container (only OPENROUTER_API_KEY) cannot switch to a
-    Claude preset — should exit 1 and name the missing env var."""
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    # OPENROUTER_API_KEY stays set from the fixture.
-    monkeypatch.setattr("sys.argv",
-                        ["switch_model.py", "--model", "haiku", "--no-restart"])
+def test_every_preset_routes_via_openrouter():
+    """Invariant lock — post-consolidation, no direct-provider entries
+    are allowed in MODELS. A future contributor adding e.g. a raw
+    Anthropic preset would silently bypass per-tenant OR cost
+    attribution; this test forces the consolidation discussion to
+    happen at PR time."""
+    for name, spec in sm.MODELS.items():
+        assert spec["provider"] == "openrouter", (
+            f"preset {name!r} must route via openrouter post-consolidation "
+            f"(got provider={spec['provider']!r})"
+        )
+
+
+def test_switch_to_any_preset_without_openrouter_key_exits_1(
+    fake_env, monkeypatch, capsys
+):
+    """Every preset routes via OpenRouter — without `OPENROUTER_API_KEY`
+    in the container env there's nothing to authenticate the call with,
+    so the script must refuse and name the missing variable."""
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "sys.argv", ["switch_model.py", "--model", "fast-claude", "--no-restart"]
+    )
     with pytest.raises(SystemExit) as exc:
         sm.main()
     assert exc.value.code == 1
     err = capsys.readouterr().err
-    assert "ANTHROPIC_API_KEY" in err
-    assert "default-tier" in err
+    assert "OPENROUTER_API_KEY" in err
 
 
-def test_switch_to_provider_with_key_succeeds(fake_env, monkeypatch):
-    """BYOK container (ANTHROPIC_API_KEY set) can switch to haiku."""
+def test_switch_to_openrouter_preset_with_key_succeeds(fake_env, monkeypatch):
+    """With `OPENROUTER_API_KEY` set (the only key any preset needs now),
+    every preset switch lands and writes the configured model id.
+
+    ANTHROPIC_API_KEY / GEMINI_API_KEY are deliberately left untouched —
+    no preset reads those env vars after consolidation, so deleting them
+    here would just be noise. (Earlier versions of this test deleted them
+    because some legacy presets required specific direct-provider keys;
+    that requirement is gone.)
+    """
     config_path, workspace = fake_env
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    monkeypatch.setattr("sys.argv",
-                        ["switch_model.py", "--model", "haiku", "--no-restart"])
+    monkeypatch.setattr(
+        "sys.argv", ["switch_model.py", "--model", "fast-claude", "--no-restart"]
+    )
     sm.main()
     config = json.loads(config_path.read_text())
-    assert config["agents"]["defaults"]["model"] == "claude-haiku-4-5-20251001"
-    assert (workspace / "CURRENT_MODEL").read_text() == "claude-haiku-4-5-20251001"
+    assert config["agents"]["defaults"]["model"] == "anthropic/claude-haiku-4.5"
+    assert (workspace / "CURRENT_MODEL").read_text() == "anthropic/claude-haiku-4.5"
 
 
 def test_switch_to_default_cheap_with_openrouter_succeeds(fake_env, monkeypatch):
@@ -141,10 +169,11 @@ def test_validation_runs_before_config_write(fake_env, monkeypatch, capsys):
     """If validation fails, neither config.json nor CURRENT_MODEL is touched."""
     config_path, workspace = fake_env
     original_config = config_path.read_text()
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    monkeypatch.setattr("sys.argv",
-                        ["switch_model.py", "--model", "sonnet", "--no-restart"])
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["switch_model.py", "--model", "balanced-claude", "--no-restart"],
+    )
     with pytest.raises(SystemExit):
         sm.main()
     assert config_path.read_text() == original_config
@@ -170,7 +199,7 @@ def test_container_mode_signals_pid_1_instead_of_systemctl(fake_env, monkeypatch
         raise AssertionError("subprocess.run must not be called in container mode")
 
     monkeypatch.setattr(sm.subprocess, "run", boom)
-    monkeypatch.setattr("sys.argv", ["switch_model.py", "--model", "sonnet"])
+    monkeypatch.setattr("sys.argv", ["switch_model.py", "--model", "balanced-claude"])
     sm.main()
 
     assert sent["pid"] == 1

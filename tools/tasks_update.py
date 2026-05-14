@@ -684,7 +684,18 @@ def main() -> None:
     parser.add_argument("--recur", help="Recurrence: e.g. 'every 2 days' (for --add)")
     parser.add_argument("--until", help="End date YYYY-MM-DD (for --add with --recur)")
     parser.add_argument("--recipients", help="Comma-separated list of alias:channel pairs, e.g. 'abc@lid:whatsapp' or 'primary:tg,sam:whatsapp' (for --add)")
-    parser.add_argument("--model", help="Model preset: flash, pro, sonnet, haiku (for --add or --edit)")
+    parser.add_argument(
+        "--model",
+        help=(
+            "Model preset (for --add or --edit). All route via OpenRouter. "
+            "Pick one of: auto, cheap, "
+            "fast-gemini, fast-gpt, fast-claude, "
+            "balanced-gemini, balanced-gpt, balanced-claude, "
+            "smart-gemini, smart-gpt, smart-claude. "
+            "Use `auto` for simple reminders so OR picks the cheapest "
+            "viable model per call. See switch_model.py:MODELS."
+        ),
+    )
     parser.add_argument("--type", dest="task_type", help="Task type: 'agentic' for tool-use tasks (for --add)")
     parser.add_argument("--goal", help="Detailed goal/instructions for agentic tasks (for --add or --edit)")
     parser.add_argument("--field", action="append", default=[], metavar="KEY=VALUE",

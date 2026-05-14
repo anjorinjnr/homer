@@ -572,7 +572,7 @@ Do NOT use the cron tool for user tasks — tasks_update.py is the only way to a
 
 Always pass `--recipients` when adding a task. Use the current message's channel and chat_id to build the value, e.g. `--recipients "abc@lid:whatsapp"`. This ensures the reminder fires back to the person who asked, on the channel they used. Never omit this field.
 
-**Per-task model selection:** When creating reminder tasks (simple messages that just need to be sent), set `--model flash25` to use the cheapest/fastest model. System tasks that run tools and compose content (morning briefing, gmail scan, balance check) should also use `--model flash25` unless they need complex reasoning. Agentic tasks use the agent's default model (no `--model` needed) — only override if the user requests a specific model. Available presets: flash25, flash, pro, sonnet, haiku.
+**Per-task model selection:** When creating reminder tasks (simple messages that just need to be sent), set `--model auto` so OpenRouter picks the cheapest viable model per call. System tasks that run tools and compose content (morning briefing, gmail scan, balance check) should also use `--model auto` unless they need complex reasoning. Agentic tasks use the agent's default model (no `--model` needed) — only override if the user requests a specific model. Available presets (all routed via OpenRouter): `auto`, `cheap`, `fast-gemini`, `fast-gpt`, `fast-claude`, `balanced-gemini`, `balanced-gpt`, `balanced-claude`, `smart-gemini`, `smart-gpt`, `smart-claude`.
 
 **Agentic tasks:** When a user asks for something that requires tool use on a schedule (e.g., "generate and send me Kemi's math report every month", "research weekend activities every Friday"), create it as an agentic task with `--type agentic`. Use `--goal` for detailed instructions if the description alone isn't enough context. The description should be a short title; the goal field carries the full instructions.
 
@@ -612,8 +612,8 @@ until Friday" → create two tasks: "Remind: bla (12pm)" and "Remind: bla (6pm)"
 # List current user tasks (each entry includes its id):
 {HOMER_VENV} {HOMER_TOOLS}/tasks_update.py --list
 
-# Simple reminder — use flash model (cheap, no reasoning needed):
-{HOMER_VENV} {HOMER_TOOLS}/tasks_update.py --add --desc "Remind: take vitamins" --schedule "2026-04-01 09:00" --recipients "<chat_id>:whatsapp" --model flash
+# Simple reminder — let OR auto-route (cheapest viable model per call):
+{HOMER_VENV} {HOMER_TOOLS}/tasks_update.py --add --desc "Remind: take vitamins" --schedule "2026-04-01 09:00" --recipients "<chat_id>:whatsapp" --model auto
 
 # Agentic task — uses tools/skills to accomplish a goal during heartbeat:
 {HOMER_VENV} {HOMER_TOOLS}/tasks_update.py --add --type agentic --desc "Generate Kemi's monthly math report" --goal "Read Kemi's math practice log, summarize progress, and send the report" --schedule "2026-05-01 08:00" --recur "every 1 month" --recipients "<chat_id>:whatsapp"
@@ -624,8 +624,8 @@ until Friday" → create two tasks: "Remind: bla (12pm)" and "Remind: bla (6pm)"
 # Edit an existing task's fields (any combination of --desc, --schedule, --recur, --until, --recipients, --model, --goal) — pass the task's Id:
 {HOMER_VENV} {HOMER_TOOLS}/tasks_update.py --edit t_a2b3c4d5 --schedule "2026-05-01"
 {HOMER_VENV} {HOMER_TOOLS}/tasks_update.py --edit t_a2b3c4d5 --desc "File 2025 taxes" --until "2026-04-15"
-# Change a task's model:
-{HOMER_VENV} {HOMER_TOOLS}/tasks_update.py --edit t_a2b3c4d5 --model pro
+# Change a task's model (e.g. promote a balanced task to smart Claude):
+{HOMER_VENV} {HOMER_TOOLS}/tasks_update.py --edit t_a2b3c4d5 --model smart-claude
 # Pass empty string to remove an optional field (reverts model to default):
 {HOMER_VENV} {HOMER_TOOLS}/tasks_update.py --edit t_a2b3c4d5 --recur ""
 {HOMER_VENV} {HOMER_TOOLS}/tasks_update.py --edit t_a2b3c4d5 --model ""
