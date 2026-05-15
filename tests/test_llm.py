@@ -107,6 +107,24 @@ class TestComplete:
                 task_kind="tool_classifier",
             )
 
+    def test_max_tokens_none_omits_kwarg(self, monkeypatch):
+        """max_tokens=None means 'don't cap' — kwarg must NOT be forwarded to
+        litellm so the provider uses its native default. Extraction callers
+        (history_extract) depend on this; otherwise long structured JSON
+        truncates at 2048 and parsing fails.
+        """
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "ak")
+        mock_litellm = MagicMock()
+        mock_litellm.completion.return_value = _fake_response("ok")
+        with patch.dict(sys.modules, {"litellm": mock_litellm}):
+            llm.complete(
+                prompt="x", model="claude-haiku-4-5",
+                provider="anthropic", task_kind="tool_classifier",
+                max_tokens=None,
+            )
+        kwargs = mock_litellm.completion.call_args.kwargs
+        assert "max_tokens" not in kwargs
+
     def test_empty_choices_returns_empty_string(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "ak")
         mock_litellm = MagicMock()
