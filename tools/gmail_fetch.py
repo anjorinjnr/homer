@@ -261,104 +261,32 @@ def _get_model_config() -> tuple[str, str]:
     return "claude-haiku-4-5-20251001", "anthropic"
 
 
-# Per-provider attribute names on each SDK's usage object. Anthropic exposes
-# `input_tokens`/`output_tokens`/`cache_read_input_tokens`; Gemini's
-# `usage_metadata` uses `prompt_token_count`/`candidates_token_count`/
-# `cached_content_token_count`. The two `_call_llm` branches were near-
-# duplicate boilerplate; routing through this table keeps adding a new
-# provider to a single dict entry instead of a third copy of the pattern.
-_USAGE_FIELDS: dict[str, tuple[str, str, str]] = {
-    # provider: (input_tokens_attr, output_tokens_attr, cache_read_tokens_attr)
-    "anthropic": ("input_tokens", "output_tokens", "cache_read_input_tokens"),
-    "gemini": ("prompt_token_count", "candidates_token_count", "cached_content_token_count"),
-}
-
-
-def _extract_usage(usage: object | None, provider: str) -> tuple[int, int, int]:
-    """Pull (input_tokens, output_tokens, cache_read_tokens) off the SDK's
-    usage object using the per-provider attribute names. Missing or None
-    fields are coerced to 0 — the caller passes the result straight into
-    `rec.record()`, which expects non-None ints.
-
-    Unknown providers return all zeros rather than raising; observability
-    code shouldn't crash the host call path.
-    """
-    fields = _USAGE_FIELDS.get(provider)
-    if not fields or usage is None:
-        return 0, 0, 0
-    in_attr, out_attr, cache_attr = fields
-    return (
-        getattr(usage, in_attr, 0) or 0,
-        getattr(usage, out_attr, 0) or 0,
-        getattr(usage, cache_attr, 0) or 0,
-    )
-
-
 def _call_llm(prompt: str, model: str, provider: str) -> str:
-    """Call the LLM with the given prompt. Returns the raw text response.
+    """Call the configured LLM with the given prompt. Returns raw text.
 
-    Emits one PostHog `$ai_generation` event per call (task_kind=tool_classifier)
-    so the cost of these heartbeat-driven classifications shows up in the same
-    LLM Analytics dashboard as agent-loop calls.
+    Dispatches via `tools.llm.complete`, which routes through litellm so the
+    same script works against anthropic, gemini, openrouter, etc. without
+    per-provider branches. Wrapped in an exec-friendly error path: errors
+    print a JSON error blob and exit 1 instead of bubbling tracebacks back
+    to the agent.
     """
     # Run-as-script puts tools/ on sys.path but not the repo root, so the
-    # ``tools.analytics`` package path is unreachable without this nudge.
-    # Mirrors history_extract.py:44.
+    # ``tools.llm`` package path is unreachable without this nudge.
     repo_root_str = str(REPO_ROOT)
     if repo_root_str not in sys.path:
         sys.path.insert(0, repo_root_str)
-    from tools.analytics.llm_call import llm_call as _llm_call
+    from tools.llm import complete
 
-    if provider == "anthropic":
-        try:
-            import anthropic
-        except ImportError:
-            print(json.dumps({"error": "Missing anthropic. Run: pip install anthropic"}))
-            sys.exit(1)
-        client = anthropic.Anthropic()
-        with _llm_call(
-            model=model, provider="anthropic", task_kind="tool_classifier",
+    try:
+        return complete(
+            prompt=prompt,
+            model=model,
+            provider=provider,
+            task_kind="tool_classifier",
             extra={"tool": "gmail_fetch"},
-        ) as rec:
-            try:
-                response = client.messages.create(
-                    model=model,
-                    max_tokens=2048,
-                    messages=[{"role": "user", "content": prompt}]
-                )
-            except Exception as e:
-                print(json.dumps({"error": f"Anthropic API call failed: {e}"}))
-                sys.exit(1)
-            in_tok, out_tok, cache_tok = _extract_usage(
-                getattr(response, "usage", None), "anthropic"
-            )
-            rec.record(input_tokens=in_tok, output_tokens=out_tok, cache_read_tokens=cache_tok)
-        return response.content[0].text.strip() if response.content else ""
-    elif provider == "gemini":
-        try:
-            from google import genai
-        except ImportError:
-            print(json.dumps({"error": "Missing google-genai. Run: pip install google-genai"}))
-            sys.exit(1)
-        client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""))
-        # Strip gemini/ prefix if present (nanobot config uses it, SDK doesn't)
-        api_model = model.removeprefix("gemini/")
-        with _llm_call(
-            model=model, provider="gemini", task_kind="tool_classifier",
-            extra={"tool": "gmail_fetch"},
-        ) as rec:
-            try:
-                response = client.models.generate_content(model=api_model, contents=prompt)
-            except Exception as e:
-                print(json.dumps({"error": f"Gemini API call failed: {e}"}))
-                sys.exit(1)
-            in_tok, out_tok, cache_tok = _extract_usage(
-                getattr(response, "usage_metadata", None), "gemini"
-            )
-            rec.record(input_tokens=in_tok, output_tokens=out_tok, cache_read_tokens=cache_tok)
-        return response.text.strip() if response.text else ""
-    else:
-        print(json.dumps({"error": f"Unsupported provider '{provider}'"}))
+        )
+    except Exception as e:
+        print(json.dumps({"error": f"LLM call failed ({provider}): {e}"}))
         sys.exit(1)
 
 

@@ -181,91 +181,37 @@ class TestGetModelConfig:
 
 # ── _call_llm() ─────────────────────────────────────────────────────────────
 
+
 class TestCallLlm:
-    """Test LLM dispatcher for different providers."""
+    """gmail_fetch._call_llm now delegates to tools.llm.complete.
 
-    def test_anthropic_call(self):
-        mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="  hello  ")]
-        with patch("anthropic.Anthropic") as MockClient:
-            MockClient.return_value.messages.create.return_value = mock_response
-            result = gf._call_llm("test prompt", "claude-haiku-4-5-20251001", "anthropic")
-        assert result == "hello"
-        MockClient.return_value.messages.create.assert_called_once_with(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=2048,
-            messages=[{"role": "user", "content": "test prompt"}],
+    Per-provider dispatch logic + usage extraction moved into tools/llm.py
+    (litellm-backed), so this surface only needs to confirm the script
+    passes its arguments through and turns dispatcher errors into the
+    JSON-error+exit-1 contract the agent loop expects.
+    """
+
+    def test_dispatches_to_tools_llm_complete(self):
+        with patch("tools.llm.complete") as mock_complete:
+            mock_complete.return_value = "actionable"
+            result = gf._call_llm("prompt body", "google/gemini-2.5-pro", "openrouter")
+        assert result == "actionable"
+        mock_complete.assert_called_once_with(
+            prompt="prompt body",
+            model="google/gemini-2.5-pro",
+            provider="openrouter",
+            task_kind="tool_classifier",
+            extra={"tool": "gmail_fetch"},
         )
 
-    def test_gemini_strips_prefix(self):
-        mock_response = MagicMock()
-        mock_response.text = "  world  "
-        mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = mock_response
-        mock_genai_module = MagicMock()
-        mock_genai_module.Client.return_value = mock_client
-        mock_google = MagicMock()
-        mock_google.genai = mock_genai_module
-        with patch.dict("sys.modules", {"google": mock_google, "google.genai": mock_genai_module}):
-            with patch.dict("os.environ", {"GEMINI_API_KEY": "test-key"}):
-                result = gf._call_llm("test", "gemini/gemini-3-pro", "gemini")
-        assert result == "world"
-        mock_client.models.generate_content.assert_called_once_with(
-            model="gemini-3-pro", contents="test"
-        )
-
-    def test_unsupported_provider_exits(self):
-        with pytest.raises(SystemExit) as exc_info:
-            gf._call_llm("test", "some-model", "openai")
+    def test_dispatcher_failure_exits_1_with_json_error(self, capsys):
+        with patch("tools.llm.complete", side_effect=RuntimeError("upstream 503")):
+            with pytest.raises(SystemExit) as exc_info:
+                gf._call_llm("x", "claude-haiku", "anthropic")
         assert exc_info.value.code == 1
-
-
-# ── _extract_usage() ────────────────────────────────────────────────────────
-
-
-class TestExtractUsage:
-    """Unit tests for the per-provider usage attribute mapper."""
-
-    def test_anthropic_attribute_names(self):
-        usage = MagicMock(
-            input_tokens=10,
-            output_tokens=5,
-            cache_read_input_tokens=2,
-        )
-        assert gf._extract_usage(usage, "anthropic") == (10, 5, 2)
-
-    def test_gemini_attribute_names(self):
-        usage = MagicMock(
-            prompt_token_count=20,
-            candidates_token_count=8,
-            cached_content_token_count=3,
-        )
-        assert gf._extract_usage(usage, "gemini") == (20, 8, 3)
-
-    def test_none_usage_returns_zeros(self):
-        assert gf._extract_usage(None, "anthropic") == (0, 0, 0)
-
-    def test_unknown_provider_returns_zeros(self):
-        usage = MagicMock(input_tokens=10, output_tokens=5)
-        assert gf._extract_usage(usage, "openai") == (0, 0, 0)
-
-    def test_missing_attributes_default_to_zero(self):
-        # Real SDKs sometimes omit cache_read_* on cold calls.
-        class Bare:
-            input_tokens = 7
-            output_tokens = 3
-            # no cache_read_input_tokens
-
-        assert gf._extract_usage(Bare(), "anthropic") == (7, 3, 0)
-
-    def test_none_valued_attributes_coerced_to_zero(self):
-        # Anthropic returns None (not 0) for cache fields when caching is off.
-        usage = MagicMock(
-            input_tokens=11,
-            output_tokens=4,
-            cache_read_input_tokens=None,
-        )
-        assert gf._extract_usage(usage, "anthropic") == (11, 4, 0)
+        payload = json.loads(capsys.readouterr().out)
+        assert "anthropic" in payload["error"]
+        assert "503" in payload["error"]
 
 
 # ── fetch_emails() — gogcli wrapper ─────────────────────────────────────────

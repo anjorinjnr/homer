@@ -32,49 +32,44 @@ import extract_core
 import history_store as hs
 
 
-def _build_gemini_llm_call():
-    """Return an async llm_call(system, user) -> str backed by Gemini.
+def _pick_extraction_route() -> tuple[str, str]:
+    """Choose (model, provider) for the extraction call.
 
-    Imports happen here so failures show up as a clear extraction error
+    Extraction wants a flash-class model regardless of what the agent's
+    chat default is. Routing preference: OpenRouter if the tenant has a
+    sub-key (post-consolidation default), otherwise direct Gemini BYOK.
+    """
+    if os.environ.get("OPENROUTER_API_KEY"):
+        return "google/gemini-2.5-flash", "openrouter"
+    if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
+        return "gemini-2.5-flash", "gemini"
+    raise RuntimeError(
+        "No LLM credentials available: set OPENROUTER_API_KEY (preferred) or GEMINI_API_KEY"
+    )
+
+
+def _build_llm_call():
+    """Return an async llm_call(system, user) -> str routed via litellm.
+
+    Imports happen lazily so failures show up as a clear extraction error
     rather than a module-load crash for callers that never run extraction.
     """
-    from google import genai  # type: ignore
-    from google.genai import types  # type: ignore
-
     sys.path.insert(0, str(REPO_ROOT))
-    from tools.analytics.llm_call import llm_call as _llm_call_recorder
+    from tools.llm import complete
 
-    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY is not set")
-
-    client = genai.Client(api_key=api_key)
+    model, provider = _pick_extraction_route()
 
     async def call(system: str, user: str) -> str:
-        # google-genai ships a sync client; run it in a thread so the
-        # extract_core async contract is honoured without blocking the loop.
         def _sync() -> str:
-            with _llm_call_recorder(
-                model="gemini/gemini-2.5-flash",
-                provider="gemini",
+            return complete(
+                prompt=user,
+                system=system,
+                model=model,
+                provider=provider,
                 task_kind="tool_classifier",
+                temperature=0.1,
                 extra={"tool": "history_extract"},
-            ) as rec:
-                response = client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=user,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system,
-                        temperature=0.1,
-                    ),
-                )
-                usage = getattr(response, "usage_metadata", None)
-                rec.record(
-                    input_tokens=getattr(usage, "prompt_token_count", 0) or 0,
-                    output_tokens=getattr(usage, "candidates_token_count", 0) or 0,
-                    cache_read_tokens=getattr(usage, "cached_content_token_count", 0) or 0,
-                )
-            return response.text or ""
+            )
 
         return await asyncio.to_thread(_sync)
 
@@ -102,7 +97,7 @@ def do_extract(artifact_id: str, contributor_id: str | None = None) -> None:
     artifact_contributor_id = artifact.get("contributor_id")
 
     try:
-        llm_call = _build_gemini_llm_call()
+        llm_call = _build_llm_call()
         fragments = asyncio.run(
             extract_core.extract_fragments(body=body, kind=kind, llm_call=llm_call)
         )
