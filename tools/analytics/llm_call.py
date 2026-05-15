@@ -136,6 +136,7 @@ class LlmCallRecord:
     is_error: bool = False
     http_status: int | None = None
     trace_id: str | None = None
+    model_served: str | None = None
     extra: dict[str, Any] | None = None
 
 
@@ -153,6 +154,7 @@ def track_llm_generation(
     is_error: bool = False,
     http_status: int | None = None,
     trace_id: str | None = None,
+    model_served: str | None = None,
     extra: dict[str, Any] | None = None,
 ) -> None:
     """Fire one `$ai_generation` event. Fire-and-forget.
@@ -185,6 +187,7 @@ def track_llm_generation(
         is_error = record.is_error
         http_status = record.http_status
         trace_id = record.trace_id
+        model_served = record.model_served
         extra = record.extra
 
     # Kwargs path: every required field must be present. We assert here
@@ -229,6 +232,16 @@ def track_llm_generation(
         props["$ai_http_status"] = int(http_status)
     if trace_id:
         props["$ai_trace_id"] = trace_id
+    # `$ai_model` is the model we requested (e.g. "openrouter/auto", or a
+    # specific OR slug). `$ai_model_served` is what the provider actually
+    # served — OpenRouter populates response.model with the routed-to
+    # model id, which can differ from the request (auto-routing, fallback
+    # chains, capacity-driven substitution). Capturing both lets us answer
+    # "which generation actually used GPT-class compute" even when we
+    # asked for something else. Omitted when the caller didn't supply it
+    # (e.g. direct-Gemini / direct-Anthropic calls where served == request).
+    if model_served and model_served != model:
+        props["$ai_model_served"] = model_served
 
     hid = get_household_id()
     if hid:
@@ -251,13 +264,20 @@ def track_llm_generation(
 class _Recorder:
     """Stash for token counts. Populated by caller via .record()."""
 
-    __slots__ = ("input_tokens", "output_tokens", "cache_read_tokens", "http_status")
+    __slots__ = (
+        "input_tokens",
+        "output_tokens",
+        "cache_read_tokens",
+        "http_status",
+        "model_served",
+    )
 
     def __init__(self) -> None:
         self.input_tokens = 0
         self.output_tokens = 0
         self.cache_read_tokens = 0
         self.http_status: int | None = None
+        self.model_served: str | None = None
 
     def record(
         self,
@@ -266,11 +286,13 @@ class _Recorder:
         output_tokens: int,
         cache_read_tokens: int = 0,
         http_status: int | None = None,
+        model_served: str | None = None,
     ) -> None:
         self.input_tokens = int(input_tokens)
         self.output_tokens = int(output_tokens)
         self.cache_read_tokens = int(cache_read_tokens)
         self.http_status = http_status
+        self.model_served = model_served
 
 
 @contextlib.contextmanager
@@ -312,5 +334,6 @@ def llm_call(
             is_error=raised,
             http_status=rec.http_status,
             trace_id=trace_id,
+            model_served=rec.model_served,
             extra=extra,
         )
