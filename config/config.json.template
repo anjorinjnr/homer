@@ -71,7 +71,8 @@
       "lastRunTracking": true,
       "intervalS": 60,
       "preCheckRegistry": {
-        "escalations": "${HOMER_VENV} ${HOMER_TOOLS}/scope_store.py --pending-escalations"
+        "escalations": "${HOMER_VENV} ${HOMER_TOOLS}/scope_store.py --pending-escalations",
+        "gmail-unread": "${HOMER_VENV} ${HOMER_TOOLS}/gmail_fetch.py --has-unread"
       }
     }
   },

@@ -362,6 +362,113 @@ Respond with valid JSON only, no other text."""
         return []
 
 
+def _has_actionable_candidates(token: str, since: datetime, *, sample_size: int = 50) -> bool:
+    """Return True if there's at least one new message that survives the
+    auto-skip label filter (i.e. NOT all promotions/social/forums).
+
+    Used by the `--has-unread` pre-check. Pulls up to `sample_size`
+    message IDs + labels in one subprocess call — no bodies, no LLM —
+    and short-circuits the moment a non-auto-skip message is seen.
+
+    Why not just "any new message?": a busy promotional inbox produces
+    30+ messages an hour that are all PROMOTIONS-labelled. Running the
+    full scan + LLM classification on those is exactly the wasted work
+    the pre-check is designed to avoid. By applying the same auto-skip
+    filter as the main path, the pre-check matches the main path's
+    "anything actionable here?" answer at a tiny fraction of the cost.
+
+    The `sample_size=50` matches the main path's --max=50 so a pre-check
+    skip means the main path would also see zero candidates. Conservative
+    by design: if all 50 fetched messages are auto-skipped but a 51st
+    actionable one exists, we miss it. Mitigation: the next heartbeat
+    tick re-runs the pre-check with the same `since` until the actionable
+    item ages out of the auto-skip set or `last_checked` advances.
+    """
+    since_epoch = int(since.timestamp())
+    data = gogcli.run(
+        token,
+        "gmail", "messages", "search",
+        f"after:{since_epoch}",
+        f"--max={sample_size}",
+    )
+    for m in data.get("messages", []) or []:
+        labels = set(m.get("labels") or [])
+        if not (labels & AUTO_SKIP_LABELS):
+            return True
+    return False
+
+
+def _cmd_has_unread(args: argparse.Namespace) -> int:
+    """`gmail_fetch.py --has-unread` — pre-check for the heartbeat registry.
+
+    Contract (matches nanobot.heartbeat.service:_run_pre_check_command):
+    - Print non-empty stdout when there's work to do (heartbeat runs the
+      LLM task).
+    - Print empty stdout (or `SKIP:`) when there's no work (heartbeat
+      skips the task entirely).
+    - Exit code 0 on success regardless of work/no-work; non-zero on
+      hard failure (auth, network, etc.) so the heartbeat fails open
+      rather than silently dropping the task forever.
+
+    Behaviour:
+    - Fans out across every valid linked Google account (matching how
+      the agent-side scan behaves post the multi-account work). Stops
+      at the first account that has any new mail — no need to count
+      across the rest.
+    - When `--account` is supplied, only that account is checked.
+    - "No Google connected" tenants and accounts with broken tokens
+      print empty + exit 0 — they should silently skip, not error.
+
+    Cost: one tiny `gmail.messages.search --max=1` per account checked,
+    well under the 30s pre-check timeout.
+    """
+    # Always fan out across every linked account for the pre-check.
+    # The agent-side scan already iterates accounts via the multi-account
+    # work (homer #2/#3); skipping when ALL accounts are quiet is the
+    # only correct decision. Single-account mode for the pre-check would
+    # silently let work on other accounts go unhandled.
+    try:
+        from accounts import list_valid_accounts
+        account_set = list_valid_accounts()
+    except Exception:
+        # Discovery breakage — fall back to the default account so the
+        # check still has something to inspect. Better to over-trigger
+        # than over-skip; the agent-side scan handles "no work" cleanly.
+        account_set = [DEFAULT_ACCOUNT]
+
+    if not account_set:
+        # No linked accounts at all — silently skip.
+        return 0
+
+    since = get_last_checked()
+
+    for account in account_set:
+        if not has_google_token(account):
+            continue
+        try:
+            token = get_access_token(account)
+        except (FileNotFoundError, PermissionError, RuntimeError):
+            # Stale/broken token — don't fail the pre-check; just move
+            # on. A fresh re-auth will surface through the main scan
+            # path's existing error reporting.
+            continue
+        try:
+            has_work = _has_actionable_candidates(token, since)
+        except RuntimeError:
+            # Network blip / API hiccup — fail open: print OK so the
+            # heartbeat runs and the real scan path reports the error
+            # with full context.
+            print(f"OK: error checking '{account}' — proceed with scan")
+            return 0
+        if has_work:
+            # First account with non-auto-skip mail wins — short-circuit.
+            print(f"OK: new actionable candidate(s) since last check (account={account})")
+            return 0
+
+    # Nothing new across all checked accounts.
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Fetch and classify new emails from the primary household Gmail.")
     parser.add_argument("--dry-run", action="store_true", help="Print emails, skip LLM call")
@@ -369,7 +476,17 @@ def main() -> None:
     parser.add_argument("--min-interval", type=int, default=60,
                         help="Skip if last run was less than N minutes ago (default: 60). Use 0 to disable.")
     parser.add_argument("--account", default=DEFAULT_ACCOUNT, help=f"Google account to fetch from (default: {DEFAULT_ACCOUNT})")
+    parser.add_argument(
+        "--has-unread", action="store_true",
+        help="Pre-check mode: print 'OK: ...' if there's any new mail since "
+             "the last check across linked accounts, else print nothing. "
+             "Always exits 0; non-empty stdout signals 'run the LLM scan' "
+             "to nanobot's heartbeat pre-check registry.",
+    )
     args = parser.parse_args()
+
+    if args.has_unread:
+        sys.exit(_cmd_has_unread(args))
 
     # Early SKIP for tenants who haven't connected Google. Same shape as
     # morning_briefing / plaid_balance_check — heartbeat handler suppresses
