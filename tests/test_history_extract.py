@@ -157,7 +157,7 @@ class TestDoExtract:
         def boom():
             raise RuntimeError("Gemini unavailable")
 
-        monkeypatch.setattr(he, "_build_gemini_llm_call", boom)
+        monkeypatch.setattr(he, "_build_llm_call", boom)
 
         with pytest.raises(SystemExit) as exc:
             he.do_extract(aid)
@@ -187,7 +187,7 @@ class TestDoExtract:
             ]
 
         monkeypatch.setattr(he.extract_core, "extract_fragments", fake_extract)
-        monkeypatch.setattr(he, "_build_gemini_llm_call", lambda: None)
+        monkeypatch.setattr(he, "_build_llm_call", lambda: None)
         monkeypatch.setattr(he.hs, "insert_fragment",
                             lambda **kw: {"id": str(uuid.uuid4()), **kw})
         monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: None)
@@ -198,12 +198,23 @@ class TestDoExtract:
         assert len(out["fragment_ids"]) == 2
 
 
-# ── _build_gemini_llm_call ───────────────────────────────────────────────────
+# ── _build_llm_call ───────────────────────────────────────────────────
 
 
 class TestBuildLlmCall:
-    def test_raises_without_api_key(self, monkeypatch):
+    def test_raises_without_any_api_key(self, monkeypatch):
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-        with pytest.raises(RuntimeError, match="GEMINI_API_KEY"):
-            he._build_gemini_llm_call()
+        with pytest.raises(RuntimeError, match="OPENROUTER_API_KEY"):
+            he._build_llm_call()
+
+    def test_prefers_openrouter_route(self, monkeypatch):
+        monkeypatch.setenv("OPENROUTER_API_KEY", "or-test")
+        monkeypatch.setenv("GEMINI_API_KEY", "gm-test")  # both present
+        assert he._pick_extraction_route() == ("google/gemini-2.5-flash", "openrouter")
+
+    def test_falls_back_to_gemini_when_openrouter_absent(self, monkeypatch):
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        monkeypatch.setenv("GEMINI_API_KEY", "gm-test")
+        assert he._pick_extraction_route() == ("gemini-2.5-flash", "gemini")

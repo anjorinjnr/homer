@@ -4,6 +4,7 @@ google-api-python-client
 google-genai
 plaid-python
 anthropic
+litellm
 python-dotenv
 pyyaml
 pypdf
