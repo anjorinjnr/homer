@@ -433,3 +433,153 @@ class TestHtmlToText:
         assert "One word" in out
         assert "Two words" in out
         assert "\n" in out
+
+
+# ── --has-unread pre-check ─────────────────────────────────────────────────────
+
+class TestHasUnreadPreCheck:
+    """Tests for the `gmail_fetch.py --has-unread` heartbeat pre-check.
+
+    Contract (matches nanobot.heartbeat.service:_run_pre_check_command):
+    - Non-empty stdout → heartbeat runs the LLM task.
+    - Empty stdout → heartbeat skips the task.
+    - Exit code 0 on success regardless; non-zero only on hard failure.
+
+    These tests pin the contract end-to-end: account enumeration, the
+    auto-skip filter (so an all-promotions inbox skips), short-circuit
+    on first actionable hit, and the fail-open behaviour on errors.
+    """
+
+    def _ns(self, account=None):
+        """Build an argparse.Namespace for `_cmd_has_unread` calls.
+
+        `account` defaults to `gf.DEFAULT_ACCOUNT` to mirror argparse's
+        production default — the impl always fans out across linked
+        accounts regardless of --account in pre-check mode.
+        """
+        import argparse
+        return argparse.Namespace(
+            account=account if account is not None else gf.DEFAULT_ACCOUNT,
+            has_unread=True, dry_run=False, hours=None, min_interval=60,
+        )
+
+    def test_no_accounts_skips_silently(self, capsys):
+        with patch.object(gf, "has_google_token", return_value=False), \
+             patch("accounts.list_valid_accounts", return_value=[]):
+            code = gf._cmd_has_unread(self._ns())
+        out = capsys.readouterr().out
+        assert code == 0
+        assert out == "", "no linked accounts → skip with empty stdout"
+
+    def test_no_new_mail_skips(self, capsys):
+        """gogcli returns zero messages — pre-check prints nothing
+        (heartbeat skips). No LLM call, no chat noise, no cost.
+        """
+        with patch.object(gf, "has_google_token", return_value=True), \
+             patch.object(gf, "get_access_token", return_value="tok"), \
+             patch("accounts.list_valid_accounts", return_value=["primary"]), \
+             patch.object(gf, "gogcli") as mock_gogcli:
+            mock_gogcli.run.return_value = {"messages": []}
+            code = gf._cmd_has_unread(self._ns())
+        out = capsys.readouterr().out
+        assert code == 0
+        assert out == ""
+
+    def test_all_auto_skip_labels_filtered_out_skips(self, capsys):
+        """Every new message is PROMOTIONS / SOCIAL / FORUMS — the
+        main path would auto-skip all of them. Pre-check matches that
+        and skips, so the LLM never runs on a noise-only batch.
+        """
+        with patch.object(gf, "has_google_token", return_value=True), \
+             patch.object(gf, "get_access_token", return_value="tok"), \
+             patch("accounts.list_valid_accounts", return_value=["primary"]), \
+             patch.object(gf, "gogcli") as mock_gogcli:
+            mock_gogcli.run.return_value = {"messages": [
+                {"id": "1", "labels": ["CATEGORY_PROMOTIONS"]},
+                {"id": "2", "labels": ["CATEGORY_SOCIAL", "UNREAD"]},
+                {"id": "3", "labels": ["CATEGORY_FORUMS"]},
+            ]}
+            code = gf._cmd_has_unread(self._ns())
+        out = capsys.readouterr().out
+        assert code == 0
+        assert out == "", "all auto-skip → empty stdout"
+
+    def test_one_actionable_among_promotions_triggers_run(self, capsys):
+        """At least one non-auto-skip message exists — pre-check prints
+        OK so the heartbeat runs the full classification pipeline.
+        """
+        with patch.object(gf, "has_google_token", return_value=True), \
+             patch.object(gf, "get_access_token", return_value="tok"), \
+             patch("accounts.list_valid_accounts", return_value=["primary"]), \
+             patch.object(gf, "gogcli") as mock_gogcli:
+            mock_gogcli.run.return_value = {"messages": [
+                {"id": "1", "labels": ["CATEGORY_PROMOTIONS"]},
+                {"id": "2", "labels": ["INBOX", "UNREAD"]},  # actionable
+                {"id": "3", "labels": ["CATEGORY_SOCIAL"]},
+            ]}
+            code = gf._cmd_has_unread(self._ns())
+        out = capsys.readouterr().out
+        assert code == 0
+        assert out.startswith("OK:"), f"actionable mail → OK signal, got: {out!r}"
+        assert "primary" in out
+
+    def test_fans_out_across_multiple_accounts(self, capsys):
+        """Pre-check fans out across every linked account. First account
+        with actionable mail wins — no need to scan the rest.
+        """
+        calls = []
+
+        def _fake_run(token, *args):
+            account = token  # we pass account name as "token" in this mock
+            calls.append(account)
+            if account == "personal":
+                return {"messages": [{"id": "1", "labels": ["INBOX"]}]}
+            return {"messages": []}  # primary is empty
+
+        with patch.object(gf, "has_google_token", return_value=True), \
+             patch.object(gf, "get_access_token", side_effect=lambda a: a), \
+             patch("accounts.list_valid_accounts", return_value=["primary", "personal"]), \
+             patch.object(gf, "gogcli") as mock_gogcli:
+            mock_gogcli.run.side_effect = _fake_run
+            code = gf._cmd_has_unread(self._ns())
+        out = capsys.readouterr().out
+        assert code == 0
+        assert "personal" in out
+        # Both accounts should have been checked (primary first, then personal).
+        assert calls == ["primary", "personal"]
+
+    def test_broken_token_for_one_account_does_not_break_check(self, capsys):
+        """A stale/broken token on one account must not silence the
+        check across the others. Don't fail-closed on a single bad
+        account — fan-out continues.
+        """
+        def _token(account):
+            if account == "primary":
+                raise RuntimeError("token expired")
+            return "tok"
+
+        with patch.object(gf, "has_google_token", return_value=True), \
+             patch.object(gf, "get_access_token", side_effect=_token), \
+             patch("accounts.list_valid_accounts", return_value=["primary", "personal"]), \
+             patch.object(gf, "gogcli") as mock_gogcli:
+            mock_gogcli.run.return_value = {"messages": [{"id": "1", "labels": ["INBOX"]}]}
+            code = gf._cmd_has_unread(self._ns())
+        out = capsys.readouterr().out
+        assert code == 0
+        assert "personal" in out, "stale primary should not silence personal's signal"
+
+    def test_api_error_fails_open(self, capsys):
+        """Network blip / gogcli error → pre-check fails open (prints
+        OK), so the agent-side scan runs and reports the real error
+        with full context. Better than silently dropping the task on
+        every transient failure.
+        """
+        with patch.object(gf, "has_google_token", return_value=True), \
+             patch.object(gf, "get_access_token", return_value="tok"), \
+             patch("accounts.list_valid_accounts", return_value=["primary"]), \
+             patch.object(gf, "gogcli") as mock_gogcli:
+            mock_gogcli.run.side_effect = RuntimeError("api down")
+            code = gf._cmd_has_unread(self._ns())
+        out = capsys.readouterr().out
+        assert code == 0
+        assert out.startswith("OK:"), "transient error → fail open with OK"
