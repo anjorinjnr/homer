@@ -68,6 +68,11 @@ def _build_llm_call():
                 provider=provider,
                 task_kind="tool_classifier",
                 temperature=0.1,
+                # No max_tokens cap: extraction emits structured JSON whose
+                # length scales with the artifact. The previous direct-Gemini
+                # call had no cap; the litellm migration accidentally added a
+                # 2048-token default that truncated long extractions.
+                max_tokens=None,
                 extra={"tool": "history_extract"},
             )
 

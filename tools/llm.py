@@ -59,7 +59,7 @@ def complete(
     provider: Provider | str,
     task_kind: TaskKind,
     system: str | None = None,
-    max_tokens: int = 2048,
+    max_tokens: int | None = 2048,
     temperature: float | None = None,
     extra: dict[str, Any] | None = None,
 ) -> str:
@@ -84,9 +84,13 @@ def complete(
     kwargs: dict[str, Any] = {
         "model": _resolve_model(model, provider),
         "messages": messages,
-        "max_tokens": max_tokens,
         "api_key": api_key,
     }
+    # max_tokens=None means "no cap" — defer to the model's native default.
+    # Extraction callers (history_extract) need this; without it, long
+    # structured-JSON outputs silently truncate at 2048 and parsing fails.
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
     if temperature is not None:
         kwargs["temperature"] = temperature
 

@@ -218,3 +218,25 @@ class TestBuildLlmCall:
         monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
         monkeypatch.setenv("GEMINI_API_KEY", "gm-test")
         assert he._pick_extraction_route() == ("gemini-2.5-flash", "gemini")
+
+    @pytest.mark.asyncio
+    async def test_dispatches_with_max_tokens_none(self, monkeypatch):
+        """Extraction must not pass a max_tokens cap to the dispatcher —
+        the pre-litellm direct-Gemini call had no cap, and structured-JSON
+        outputs can exceed any default. Regression guard for the fix to the
+        bug introduced by the original litellm migration (PR #23).
+        """
+        monkeypatch.setenv("OPENROUTER_API_KEY", "or-test")
+        captured: dict = {}
+
+        def fake_complete(**kwargs):
+            captured.update(kwargs)
+            return "[]"
+
+        monkeypatch.setattr("tools.llm.complete", fake_complete)
+
+        call = he._build_llm_call()
+        await call("sys", "user")
+        assert captured["max_tokens"] is None
+        assert captured["temperature"] == 0.1
+        assert captured["extra"] == {"tool": "history_extract"}
