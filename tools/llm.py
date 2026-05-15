@@ -103,7 +103,18 @@ def complete(
         out_tok = int(getattr(usage, "completion_tokens", 0) or 0)
         details = getattr(usage, "prompt_tokens_details", None)
         cache_tok = int(getattr(details, "cached_tokens", 0) or 0) if details else 0
-        rec.record(input_tokens=in_tok, output_tokens=out_tok, cache_read_tokens=cache_tok)
+        # OpenRouter (and litellm in general) report the actually-served
+        # model on response.model — this differs from what we requested
+        # when OR's auto-router or a fallback chain reroutes the call.
+        # Capture it so `$ai_model_served` in PostHog reflects which
+        # SKU actually ran, not just which one we asked for.
+        served = getattr(response, "model", None)
+        rec.record(
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+            cache_read_tokens=cache_tok,
+            model_served=served,
+        )
 
     choices = getattr(response, "choices", None) or []
     if not choices:
