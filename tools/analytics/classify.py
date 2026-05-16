@@ -19,7 +19,7 @@ from "pipeline broke".
 
 Routing follows the same three-step precedence as the nanobot classifier:
 
-  1. ``LLM_SYSTEM_API_KEY`` → OpenRouter (post-consolidation default).
+  1. ``OPENROUTER_API_KEY_SYSTEM`` → OpenRouter (post-consolidation default).
   2. ``HOMER_ANALYTICS_GEMINI_API_KEY`` → direct Gemini (legacy Homer-
      owned analytics key, kept for pre-consolidation deployments).
   3. ``GEMINI_API_KEY`` → direct Gemini (dev/local single-key fallback).
@@ -142,7 +142,7 @@ def classify_message(text: str) -> str:
 # Resolution order matches nanobot/analytics/classify.py (same env-var
 # precedence) so both classifiers route to the same provider on a given
 # tenant. After the OpenRouter consolidation,
-# ``LLM_SYSTEM_API_KEY`` is the canonical path (platform-funded sub-key
+# ``OPENROUTER_API_KEY_SYSTEM`` is the canonical path (platform-funded sub-key
 # under the OpenRouter master). The Gemini-direct paths remain as
 # fallbacks for legacy tenants and dev/local environments that haven't
 # switched yet.
@@ -151,7 +151,7 @@ _CLASSIFIER_ROUTES: tuple[tuple[str, str, str], ...] = (
         # `openrouter/auto` lets OpenRouter pick the cheapest viable model
         # per request — single-tag snake_case classification doesn't need
         # a specific model, and pinning bakes in a SKU that ages out.
-        "LLM_SYSTEM_API_KEY",
+        "OPENROUTER_API_KEY_SYSTEM",
         "https://openrouter.ai/api/v1/chat/completions",
         "openrouter/auto",
     ),
@@ -186,7 +186,7 @@ def _resolve_api_key() -> str:
 def _call_gemini(text: str) -> str:
     """Call the active classifier route and return a validated tag.
 
-    Routes through OpenRouter when ``LLM_SYSTEM_API_KEY`` is set
+    Routes through OpenRouter when ``OPENROUTER_API_KEY_SYSTEM`` is set
     (post-consolidation default); falls back to direct Gemini for legacy
     deployments. The kept-for-back-compat function name stays as
     ``_call_gemini`` so existing test patches don't break.
