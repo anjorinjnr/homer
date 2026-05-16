@@ -172,7 +172,7 @@ class TestValidate:
 class TestResolveApiKey:
     """Resolution order after the OpenRouter consolidation:
 
-      1. LLM_SYSTEM_API_KEY              → OpenRouter (system bucket)
+      1. OPENROUTER_API_KEY_SYSTEM              → OpenRouter (system bucket)
       2. HOMER_ANALYTICS_GEMINI_API_KEY  → direct Gemini (legacy)
       3. GEMINI_API_KEY                  → direct Gemini (dev/local)
     """
@@ -180,7 +180,7 @@ class TestResolveApiKey:
     @staticmethod
     def _clear(monkeypatch):
         for v in (
-            "LLM_SYSTEM_API_KEY",
+            "OPENROUTER_API_KEY_SYSTEM",
             "HOMER_ANALYTICS_GEMINI_API_KEY",
             "GEMINI_API_KEY",
         ):
@@ -188,7 +188,7 @@ class TestResolveApiKey:
 
     def test_llm_system_key_wins(self, monkeypatch):
         self._clear(monkeypatch)
-        monkeypatch.setenv("LLM_SYSTEM_API_KEY", "sk-or-v1-system")
+        monkeypatch.setenv("OPENROUTER_API_KEY_SYSTEM", "sk-or-v1-system")
         monkeypatch.setenv("HOMER_ANALYTICS_GEMINI_API_KEY", "homer_owned")
         monkeypatch.setenv("GEMINI_API_KEY", "tenant_owned")
         assert _resolve_api_key() == "sk-or-v1-system"
@@ -210,13 +210,13 @@ class TestResolveApiKey:
 
     def test_strips_whitespace(self, monkeypatch):
         self._clear(monkeypatch)
-        monkeypatch.setenv("LLM_SYSTEM_API_KEY", "  sk-or-v1-padded  ")
+        monkeypatch.setenv("OPENROUTER_API_KEY_SYSTEM", "  sk-or-v1-padded  ")
         assert _resolve_api_key() == "sk-or-v1-padded"
 
     def test_blank_higher_priority_key_falls_through(self, monkeypatch):
         # An accidentally-empty higher-priority key (e.g. set to "" in a
         # deploy script) must not blackhole the classifier.
         self._clear(monkeypatch)
-        monkeypatch.setenv("LLM_SYSTEM_API_KEY", "   ")
+        monkeypatch.setenv("OPENROUTER_API_KEY_SYSTEM", "   ")
         monkeypatch.setenv("HOMER_ANALYTICS_GEMINI_API_KEY", "homer_owned")
         assert _resolve_api_key() == "homer_owned"
