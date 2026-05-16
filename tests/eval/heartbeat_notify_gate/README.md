@@ -23,8 +23,9 @@ labeled set of representative `(task, response)` pairs.
 |---|---|
 | `cases.jsonl` | Labeled `(task, response, expected_notify)` examples. **Generic, no PII** — homer is OSS-public, see global feedback memory. |
 | `variants.py` | Tool schema + the prompt strings. `BASELINE` mirrors the live `evaluator.md`; `TIGHT` is the candidate. Keep `BASELINE` in sync on nanobot bumps. |
-| `run_eval.py` | Harness. Loads cases, runs each (prompt, model) combo, prints a confusion matrix per combo + a self-consistency rate. |
-| `test_cases.py` | Pytest that pins the case-set shape (each row parses, no duplicate IDs, expected is a bool, etc.). Catches corruption from rebases. |
+| `run_eval.py` | Harness. Async, parallel LLM calls (capped by `--concurrency`). Prints a confusion matrix per (prompt, model) combo. |
+| `test_cases.py` | Pytest that pins the case-set shape (each row parses, no duplicate IDs, `expected` is a bool, etc.). Catches corruption from rebases. |
+| `test_harness.py` | Pytest for `run_eval.py` itself — mocks litellm; covers the confusion-matrix math, fail-open / retry / no-tool-call paths, CLI arg validation, and `--json` stdout shape. |
 
 ## Running
 
@@ -33,17 +34,30 @@ labeled set of representative `(task, response)` pairs.
 # OPENROUTER_API_KEY so a leaked eval key can't drive real traffic.
 export HOMER_EVAL_API_KEY=sk-or-v1-...
 
-# Default: run all four combos with 3 repeats each
+# Default: run all four combos with 3 repeats each (~30s with concurrency=8)
 python tests/eval/heartbeat_notify_gate/run_eval.py
 
-# Iterate on the tight prompt only
+# Iterate on the tight prompt only — fast feedback loop
 python tests/eval/heartbeat_notify_gate/run_eval.py --variant tight --repeats 1
 
 # Different models on the smart axis
 python tests/eval/heartbeat_notify_gate/run_eval.py \
     --baseline-model openrouter/google/gemini-2.5-flash \
     --smart-model    openrouter/anthropic/claude-sonnet-4-6
+
+# JSON only on stdout — tables go to stderr — for `... --json | jq .`
+python tests/eval/heartbeat_notify_gate/run_eval.py --json --quiet > results.json
 ```
+
+### Concurrency, timeouts, retries
+
+`run_eval.py` issues all (case × repeat) requests concurrently up to
+`--concurrency` (default 8). Transient errors (429s, 5xx, timeouts) are
+retried with exponential backoff up to `--max-retries` (default 3) per
+call; persistent failures yield a `fallback_notify` outcome rather than
+crashing the run. Bump `--concurrency` for faster sweeps on Flash;
+lower it (or raise `--max-retries`) if you're hitting provider limits
+on a Sonnet sweep.
 
 ## How to interpret the output
 
