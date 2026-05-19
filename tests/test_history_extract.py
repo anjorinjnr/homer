@@ -212,7 +212,7 @@ class TestBuildLlmCall:
     def test_prefers_openrouter_route(self, monkeypatch):
         monkeypatch.setenv("OPENROUTER_API_KEY", "or-test")
         monkeypatch.setenv("GEMINI_API_KEY", "gm-test")  # both present
-        assert he._pick_extraction_route() == ("google/gemini-2.5-flash", "openrouter")
+        assert he._pick_extraction_route() == ("google/gemini-3-flash-preview", "openrouter")
 
     def test_falls_back_to_gemini_when_openrouter_absent(self, monkeypatch):
         monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)

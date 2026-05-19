@@ -40,7 +40,7 @@ def _pick_extraction_route() -> tuple[str, str]:
     sub-key (post-consolidation default), otherwise direct Gemini BYOK.
     """
     if os.environ.get("OPENROUTER_API_KEY"):
-        return "google/gemini-2.5-flash", "openrouter"
+        return "google/gemini-3-flash-preview", "openrouter"
     if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
         return "gemini-2.5-flash", "gemini"
     raise RuntimeError(

@@ -91,7 +91,7 @@ MODELS = {
     "auto":             {"model": "openrouter/auto",               "provider": "openrouter"},
     "cheap":            {"model": "deepseek/deepseek-v3.2",        "provider": "openrouter"},
 
-    "gemini-fast":      {"model": "google/gemini-2.5-flash",       "provider": "openrouter"},
+    "gemini-fast":      {"model": "google/gemini-3-flash-preview", "provider": "openrouter"},
     "gemini-balanced":  {"model": "google/gemini-2.5-pro",         "provider": "openrouter"},
     "gemini-smart":     {"model": "google/gemini-3.1-pro-preview", "provider": "openrouter"},
 
