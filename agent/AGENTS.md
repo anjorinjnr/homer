@@ -739,7 +739,7 @@ Preset names and the OpenRouter model id each one writes to CURRENT_MODEL:
 - `auto`             → openrouter/auto (let OpenRouter pick per call)
 - `cheap`            → deepseek/deepseek-v3.2
 
-- `gemini-fast`      → google/gemini-2.5-flash
+- `gemini-fast`      → google/gemini-3-flash-preview
 - `gpt-fast`         → openai/gpt-5-mini
 - `claude-fast`      → anthropic/claude-haiku-4.5
 

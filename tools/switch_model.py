@@ -78,36 +78,10 @@ def _validate_provider_credentials(preset_name: str, provider: str) -> None:
     sys.exit(1)
 
 
-# Canonical preset slate — every entry routes through `provider="openrouter"`
-# so chat + heartbeats land on the household's OR sub-key (or BYOK OR key)
-# and OpenRouter dispatches upstream based on the `<vendor>/<model>` prefix.
-# `auto` defers to OR's per-request routing; `cheap` pins deepseek-v3.2;
-# the nine tier×vendor slots let admins pick "how smart" × "which vendor".
-#
-# Kept in lockstep with homer-portal/backend/services/config_service.py
-# MODEL_PRESETS — both must agree on the label set. See
-# [[project_openrouter_consolidation]] for the rationale.
-MODELS = {
-    "auto":             {"model": "openrouter/auto",               "provider": "openrouter"},
-    "cheap":            {"model": "deepseek/deepseek-v3.2",        "provider": "openrouter"},
-
-    "gemini-fast":      {"model": "google/gemini-2.5-flash",       "provider": "openrouter"},
-    "gemini-balanced":  {"model": "google/gemini-2.5-pro",         "provider": "openrouter"},
-    "gemini-smart":     {"model": "google/gemini-3.1-pro-preview", "provider": "openrouter"},
-
-    "gpt-fast":         {"model": "openai/gpt-5-mini",             "provider": "openrouter"},
-    "gpt-balanced":     {"model": "openai/gpt-5",                  "provider": "openrouter"},
-    "gpt-smart":        {"model": "openai/gpt-5.5",                "provider": "openrouter"},
-
-    "claude-fast":      {"model": "anthropic/claude-haiku-4.5",    "provider": "openrouter"},
-    "claude-balanced":  {"model": "anthropic/claude-sonnet-4.6",   "provider": "openrouter"},
-    "claude-smart":     {"model": "anthropic/claude-opus-4.7",     "provider": "openrouter"},
-
-    # Internal alias retained for the default-tier heartbeat path (used by
-    # render_household_env when HOMER_HEARTBEAT_MODEL is unset). Same SKU
-    # as `cheap`; named for clarity at the call site.
-    "default-cheap":    {"model": "deepseek/deepseek-v3.2",        "provider": "openrouter"},
-}
+# Slate sourced from tools/presets.py. Aliased as MODELS for the existing
+# call sites (argparse choices, validation) that already reach into the
+# dict by label.
+from presets import PRESETS as MODELS
 
 
 def main() -> None:
