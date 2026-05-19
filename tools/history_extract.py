@@ -38,9 +38,16 @@ def _pick_extraction_route() -> tuple[str, str]:
     Extraction wants a flash-class model regardless of what the agent's
     chat default is. Routing preference: OpenRouter if the tenant has a
     sub-key (post-consolidation default), otherwise direct Gemini BYOK.
+
+    The OpenRouter id comes from the canonical `gemini-fast` preset so a
+    bump there flows through here automatically. The direct-Gemini fallback
+    stays pinned to 2.5-flash — the OAI-compat layer 404s on `gemini/`-
+    prefixed 3-flash-preview, and that path is legacy anyway.
     """
+    from presets import resolve
+
     if os.environ.get("OPENROUTER_API_KEY"):
-        return "google/gemini-2.5-flash", "openrouter"
+        return resolve("gemini-fast")["model"], "openrouter"
     if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
         return "gemini-2.5-flash", "gemini"
     raise RuntimeError(

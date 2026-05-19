@@ -210,9 +210,14 @@ class TestBuildLlmCall:
             he._build_llm_call()
 
     def test_prefers_openrouter_route(self, monkeypatch):
+        from presets import resolve
+
         monkeypatch.setenv("OPENROUTER_API_KEY", "or-test")
         monkeypatch.setenv("GEMINI_API_KEY", "gm-test")  # both present
-        assert he._pick_extraction_route() == ("google/gemini-2.5-flash", "openrouter")
+        # OpenRouter path resolves the gemini-fast preset, so this stays
+        # green across preset bumps. The (provider, model) pairing is the
+        # real contract: openrouter + whatever gemini-fast maps to today.
+        assert he._pick_extraction_route() == (resolve("gemini-fast")["model"], "openrouter")
 
     def test_falls_back_to_gemini_when_openrouter_absent(self, monkeypatch):
         monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
