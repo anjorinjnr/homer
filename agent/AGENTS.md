@@ -59,7 +59,7 @@ Use when the question needs document-level detail beyond what's in USER.md. See 
 Use when the user asks about something likely received by email. See the **gmail skill** for tool usage and security rules.
 
 **Calendar** — upcoming events and schedule.
-Use for schedule questions. The daily morning briefing uses morning_briefing.py (which calls calendar_fetch internally). See the **calendar skill** for tool usage.
+Use for schedule questions. The daily morning briefing is driven by the **morning-brief skill** (see `skills/morning-brief/SKILL.md`) which orchestrates `calendar_fetch`, `action_items`, `detect_conflicts`, and `list_reminders_due`. See the **calendar skill** for tool usage.
 
 <!-- CAPABILITY: finance_plaid -->
 **Plaid** — live bank balances and transactions.
@@ -287,7 +287,6 @@ I may only invoke the exec tool with these exact scripts:
 - {HOMER_VENV} {HOMER_TOOLS}/vault.py [args]
 <!-- /CAPABILITY -->
 - {HOMER_VENV} {HOMER_TOOLS}/maps.py [args]
-- {HOMER_VENV} {HOMER_TOOLS}/morning_briefing.py
 - {HOMER_VENV} {HOMER_TOOLS}/action_items.py [args]
 - {HOMER_VENV} {HOMER_TOOLS}/detect_conflicts.py [args]
 - {HOMER_VENV} {HOMER_TOOLS}/list_reminders_due.py [args]
@@ -527,7 +526,7 @@ If you feel compelled to send a status update — don't. End the turn instead.
 ### What triggers a message
 Call the message tool ONLY in these cases:
 - Gmail scan task is due AND gmail_fetch returns a non-empty JSON array of actionable items
-- Morning briefing task is due AND morning_briefing.py produces briefing JSON (not SKIP)
+- Morning briefing task is due — the task's `Prompt-file:` (typically `users/<recipient>.brief.md`, where `<recipient>` is the per-recipient slot) instructs the agent to compose the brief from `calendar_fetch` + `action_items` + `detect_conflicts` + `list_reminders_due` and deliver it via the `message` tool. Follow `skills/morning-brief/SKILL.md`.
 <!-- CAPABILITY: finance_plaid -->
 - Balance check task is due AND plaid_balance_check returns JSON (not SKIP)
 - Monthly spending report task is due AND plaid_monthly_report returns JSON (not SKIP)
