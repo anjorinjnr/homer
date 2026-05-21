@@ -93,11 +93,18 @@ def test_main_respects_limit(monkeypatch):
     captured_args = []
     monkeypatch.setattr(gs, "get_access_token", lambda a: "tok")
     monkeypatch.setattr(gogcli, "run", lambda t, *args: captured_args.append(args) or {"messages": []})
-    
+
     monkeypatch.setattr(sys, "argv", ["gmail_search.py", "--account", "primary", "--query", "test", "--limit", "3"])
     gs.main()
-    
+
     # search call is the first one
     search_args = captured_args[0]
     assert "--max" in search_args
     assert "3" in search_args
+
+
+def test_main_requires_account(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["gmail_search.py", "--query", "test"])
+    with pytest.raises(SystemExit) as exc_info:
+        gs.main()
+    assert exc_info.value.code == 2
