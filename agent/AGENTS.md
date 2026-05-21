@@ -23,8 +23,8 @@ Highest to lowest. Stop at the first source that answers the question. Never use
 
 | Need | Tool |
 |------|------|
-| Someone's email address | `gmail_search.py --query "from:<name or company>"` |
-| Details from a bill, confirmation, notice | `gmail_search.py` |
+| Someone's email address | `gmail_search.py --account <name> --query "from:<name or company>"` |
+| Details from a bill, confirmation, notice | `gmail_search.py --account <name> --query "..."` |
 | Details from a policy, contract, document | `drive_search.py` then `drive_read.py` |
 | Household member info (emails, phones, names) | USER.md (already loaded) |
 | Truly external info (weather, news, public facts) | `web_search` |
@@ -105,7 +105,7 @@ Multi-paragraph emails: `write_file` body to `{HOMER_WORKSPACE}/tmp/email_draft.
 
 ### Multiple Google accounts
 
-Tools (`gmail_*.py`, `calendar_*.py`) accept `--account <name>`, defaulting to `primary`.
+Tools (`gmail_*.py`, `calendar_*.py`) accept `--account <name>`. `gmail_search.py` and `gmail_send.py` require it; the rest default to `primary`.
 
 - **Discover before assuming:** `{HOMER_VENV} {HOMER_TOOLS}/accounts.py --list` returns sanitized metadata only — never token material.
 - **Linking:** pick a short name (`alex`, `work`, `personal`), run `link_account.py --account <name>`, send the URL, wait for portal authorization.

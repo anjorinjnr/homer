@@ -81,7 +81,10 @@ def _validate_provider_credentials(preset_name: str, provider: str) -> None:
 # Slate sourced from tools/presets.py. Aliased as MODELS for the existing
 # call sites (argparse choices, validation) that already reach into the
 # dict by label.
-from presets import PRESETS as MODELS
+try:
+    from tools.presets import PRESETS as MODELS
+except ImportError:  # when tools/ is on sys.path directly (script invocation)
+    from presets import PRESETS as MODELS  # type: ignore
 
 
 def main() -> None:

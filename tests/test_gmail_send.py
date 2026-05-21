@@ -145,7 +145,14 @@ def _patch_token_and_gogcli(creds_token: str = "live-token", run_return=None, **
 
 
 def _run_main(argv: list[str]):
-    """Run gmail_send.main with sys.argv patched to argv."""
+    """Run gmail_send.main with sys.argv patched to argv.
+
+    Injects --account primary right after the script name unless the
+    caller already set --account, so most tests can stay account-agnostic
+    after --account became required.
+    """
+    if "--account" not in argv:
+        argv = [argv[0], "--account", "primary", *argv[1:]]
     with patch("sys.argv", argv):
         gmail_send.main()
 
@@ -178,7 +185,7 @@ class TestSendEmail:
             return {"messageId": "msg123", "threadId": "thr1"}
 
         with _stubbed_token(), _stubbed_run(side_effect=fake_run):
-            _run_main(["gmail_send.py", "send", "--to", "alice@example.com",
+            _run_main(["gmail_send.py", "--account", "homer", "send", "--to", "alice@example.com",
                        "--subject", "Hello", "--body", "Hi"])
 
         assert captured["token"] == "live-token"
@@ -187,7 +194,7 @@ class TestSendEmail:
         assert "--to" in argv and "alice@example.com" in argv
         assert "--subject" in argv and "Hello" in argv
         assert "--body" in argv and "Hi" in argv
-        # account=homer (default) → --from homer@example.com (or HOMER_EMAIL_ADDRESS override)
+        # account=homer → --from homer@example.com (or HOMER_EMAIL_ADDRESS override)
         assert "--from" in argv
 
         output = json.loads(capsys.readouterr().out.strip())
@@ -411,13 +418,19 @@ class TestReplyToThreading:
 
 class TestErrorHandling:
     def test_missing_to_for_send(self):
-        with patch("sys.argv", ["gmail_send.py", "send", "--subject", "Hello", "--body", "Hi"]):
+        with patch("sys.argv", ["gmail_send.py", "--account", "primary", "send", "--subject", "Hello", "--body", "Hi"]):
             with pytest.raises(SystemExit) as exc_info:
                 gmail_send.main()
             assert exc_info.value.code == 2
 
     def test_missing_subcommand(self):
-        with patch("sys.argv", ["gmail_send.py"]):
+        with patch("sys.argv", ["gmail_send.py", "--account", "primary"]):
+            with pytest.raises(SystemExit) as exc_info:
+                gmail_send.main()
+            assert exc_info.value.code == 2
+
+    def test_missing_account_required(self):
+        with patch("sys.argv", ["gmail_send.py", "send", "--to", "a@b.com", "--subject", "S", "--body", "B"]):
             with pytest.raises(SystemExit) as exc_info:
                 gmail_send.main()
             assert exc_info.value.code == 2
@@ -614,7 +627,7 @@ class TestBodyFile:
     def test_body_and_body_file_mutually_exclusive(self, tmp_path):
         body_file = tmp_path / "body.txt"
         body_file.write_text("content", encoding="utf-8")
-        with patch("sys.argv", ["gmail_send.py", "send", "--to", "a@b.com",
+        with patch("sys.argv", ["gmail_send.py", "--account", "primary", "send", "--to", "a@b.com",
                                 "--body", "inline", "--body-file", str(body_file)]):
             with pytest.raises(SystemExit) as exc_info:
                 gmail_send.main()

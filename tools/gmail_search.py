@@ -62,7 +62,7 @@ def main():
     parser = argparse.ArgumentParser(description="Search Gmail via gogcli.")
     parser.add_argument("--query", required=True, help="Gmail search query")
     parser.add_argument("--limit", type=int, default=5, help="Max emails to return (default: 5)")
-    parser.add_argument("--account", default=DEFAULT_ACCOUNT, help=f"Google account to use (default: {DEFAULT_ACCOUNT})")
+    parser.add_argument("--account", required=True, help="Google account to use (e.g. primary, homer, personal)")
     args = parser.parse_args()
 
     try:
