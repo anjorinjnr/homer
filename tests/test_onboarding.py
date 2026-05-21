@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 import tools.context_updater as cu
+import tools.google_auth as ga
 import tools.onboarding as ob
 from tools.onboarding_fields import FIELDS, HOUSEHOLD_TEMPLATE, field_by_key
 
@@ -34,6 +35,13 @@ def isolated_fs(tmp_path, monkeypatch):
     user_context_dir.mkdir(parents=True)
     monkeypatch.setattr(cu, "CONTEXT_DIR", context_dir)
     monkeypatch.setattr(cu, "USER_CONTEXT_DIR", user_context_dir)
+
+    # Isolate Google token detection — a real token in secrets/ on a dev
+    # machine would otherwise leak into _detect_workspace() and flip the
+    # workspace setup status from "unknown" to "done".
+    token_dir = tmp_path / "secrets" / "tokens"
+    monkeypatch.setattr(ga, "TOKENS_DIR", token_dir)
+    monkeypatch.setattr(ga, "LEGACY_TOKEN", tmp_path / "secrets" / "google_token.pickle")
     return tmp_path
 
 

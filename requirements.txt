@@ -11,3 +11,4 @@ pypdf
 skyvern
 pre-commit
 pytest
+pytest-asyncio
