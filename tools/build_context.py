@@ -29,10 +29,17 @@ import argparse
 import json
 import os
 import re
+import sys
 from pathlib import Path
 from datetime import datetime
 
 REPO_ROOT = Path(__file__).parent.parent.resolve()
+# `from tools.users_loader` (in the admin-name lookup below) and
+# `from tools.build_identity_map` (write_map call at the bottom of main())
+# both need REPO_ROOT on sys.path; script invocation puts only tools/ on
+# path. Mirrors manage_users.py's bootstrap.
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 # Env overrides match context_updater.py so subprocess tool calls, sim runs,
 # and hosted instances can redirect context reads/writes without code edits.
 CONTEXT_DIR = Path(os.environ.get("HOMER_CONTEXT_DIR") or (REPO_ROOT / "context"))

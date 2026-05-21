@@ -35,6 +35,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 _TOOLS = str(REPO_ROOT / "tools")
 if _TOOLS not in sys.path:
     sys.path.insert(0, _TOOLS)
+# `from tools.users_loader` needs REPO_ROOT on path too (sibling-script
+# invocation puts only tools/ on path, not the parent).
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 import scope_store as ss  # noqa: E402
 

@@ -27,11 +27,17 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 from pathlib import Path
 
 import yaml
 
 REPO_ROOT = Path(__file__).parent.parent.resolve()
+# Put REPO_ROOT on sys.path so `from tools.users_loader import ...` resolves
+# whether this module is invoked as a script (`python tools/build_identity_map.py`,
+# which puts `tools/` not REPO_ROOT on path) or imported from tests/build_context.
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 CONTEXT_DIR = Path(os.environ.get("HOMER_CONTEXT_DIR") or (REPO_ROOT / "context"))
 WORKSPACE_DIR = CONTEXT_DIR / ".nanobot_workspace"
 USERS_YAML = CONTEXT_DIR / "users.yaml"
@@ -128,7 +134,7 @@ def build_map(
     try:
         from tools.users_loader import iter_users, load_users
         data = load_users(users_yaml_path)
-    except (ValueError, yaml.YAMLError):
+    except (ValueError, yaml.YAMLError, ImportError):
         return {}
     lid_to_phone = _load_lid_map(lid_map_path)
 

@@ -61,6 +61,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent.resolve()
+# Bootstrap REPO_ROOT on sys.path so `from tools.users_loader import ...`
+# resolves whether this file runs as a script or is imported under pytest.
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 GITHUB_API = "https://api.github.com"
 
 VALID_CATEGORIES = ("bug", "feature", "kudos")
