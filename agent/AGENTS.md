@@ -23,8 +23,8 @@ Highest to lowest. Stop at the first source that answers the question. Never use
 
 | Need | Tool |
 |------|------|
-| Someone's email address | `gmail_search.py --query "from:<name or company>"` |
-| Details from a bill, confirmation, notice | `gmail_search.py` |
+| Someone's email address | `gmail_search.py --account <name> --query "from:<name or company>"` |
+| Details from a bill, confirmation, notice | `gmail_search.py --account <name> --query "..."` |
 | Details from a policy, contract, document | `drive_search.py` then `drive_read.py` |
 | Household member info (emails, phones, names) | USER.md (already loaded) |
 | Truly external info (weather, news, public facts) | `web_search` |

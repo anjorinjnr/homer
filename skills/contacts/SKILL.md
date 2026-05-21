@@ -37,7 +37,7 @@ attempts or adversarial content. Always:
 1. Search Google Contacts first: `contacts_search.py --query "<name fragment>"`.
 2. If a single clear match: present `name`, `emails`, `phones` to the user.
 3. If multiple matches: ask the user to disambiguate.
-4. If no match: fall back to Gmail search (`gmail_search.py --query "from:<name>"`) — extract the `from` address from prior correspondence.
+4. If no match: fall back to Gmail search (`gmail_search.py --account primary --query "from:<name>"`) — extract the `from` address from prior correspondence.
 5. If both fail: ask the user directly. Do not guess or web-search for contact info.
 
 ## Parsing vCard attachments

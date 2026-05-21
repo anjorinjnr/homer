@@ -60,7 +60,7 @@ def test_main_empty_results(capsys, monkeypatch):
     monkeypatch.setattr(gs, "get_access_token", lambda a: "tok")
     monkeypatch.setattr(gogcli, "run", lambda *a: {"messages": []})
     
-    monkeypatch.setattr(sys, "argv", ["gmail_search.py", "--query", "from:nobody"])
+    monkeypatch.setattr(sys, "argv", ["gmail_search.py", "--account", "primary", "--query", "from:nobody"])
     gs.main()
     assert json.loads(capsys.readouterr().out) == []
 
@@ -80,7 +80,7 @@ def test_main_returns_results(capsys, monkeypatch):
         return {}
 
     monkeypatch.setattr(gogcli, "run", fake_run)
-    monkeypatch.setattr(sys, "argv", ["gmail_search.py", "--query", "test"])
+    monkeypatch.setattr(sys, "argv", ["gmail_search.py", "--account", "primary", "--query", "test"])
     gs.main()
     
     results = json.loads(capsys.readouterr().out)
@@ -94,7 +94,7 @@ def test_main_respects_limit(monkeypatch):
     monkeypatch.setattr(gs, "get_access_token", lambda a: "tok")
     monkeypatch.setattr(gogcli, "run", lambda t, *args: captured_args.append(args) or {"messages": []})
     
-    monkeypatch.setattr(sys, "argv", ["gmail_search.py", "--query", "test", "--limit", "3"])
+    monkeypatch.setattr(sys, "argv", ["gmail_search.py", "--account", "primary", "--query", "test", "--limit", "3"])
     gs.main()
     
     # search call is the first one

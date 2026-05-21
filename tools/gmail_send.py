@@ -5,12 +5,12 @@ gmail_send.py — Send emails and manage drafts via gogcli.
 Supports multiple Google accounts (homer, primary, ad-hoc).
 
 Usage:
-    gmail_send.py send --to user@example.com --subject "Hello" --body "Hi there"
-    gmail_send.py send --to user@example.com --subject "Re: thread" --body-file /path/to/body.txt --reply-to MSG_ID
-    gmail_send.py draft --to user@example.com --subject "Hello" --body "Hi"
-    gmail_send.py draft-update --draft-id DRAFT_ID --to user@example.com --subject "New" --body "Updated"
-    gmail_send.py draft-send --draft-id DRAFT_ID
-    gmail_send.py draft-delete --draft-id DRAFT_ID
+    gmail_send.py --account primary send --to user@example.com --subject "Hello" --body "Hi there"
+    gmail_send.py --account primary send --to user@example.com --subject "Re: thread" --body-file /path/to/body.txt --reply-to MSG_ID
+    gmail_send.py --account primary draft --to user@example.com --subject "Hello" --body "Hi"
+    gmail_send.py --account primary draft-update --draft-id DRAFT_ID --to user@example.com --subject "New" --body "Updated"
+    gmail_send.py --account primary draft-send --draft-id DRAFT_ID
+    gmail_send.py --account primary draft-delete --draft-id DRAFT_ID
 
 Output (JSON):
     {"status": "sent", "message_id": "...", "to": "...", "subject": "..."}
@@ -354,7 +354,7 @@ def _add_compose_args(parser: argparse.ArgumentParser) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="Send emails and manage drafts via Gmail (gogcli wrapper).")
-    parser.add_argument("--account", default="homer", help="Account name (default: homer)")
+    parser.add_argument("--account", required=True, help="Account name (e.g. primary, homer, personal)")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     p_send = subparsers.add_parser("send", help="Send an email (internal recipients only)")
