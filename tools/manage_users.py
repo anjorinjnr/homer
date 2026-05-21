@@ -7,6 +7,10 @@ and list household users.
 
 Shared logic lives in the pure-Python functions: list_users(), add_user(),
 update_user(), remove_user().  The cmd_* functions are thin CLI wrappers.
+
+All I/O and schema concerns delegate to users_loader.py; this module just
+mutates the in-memory v2 dict and lets the loader handle persistence. See
+docs/identity-resolution.md.
 """
 
 import argparse
@@ -15,8 +19,6 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-
-import yaml
 
 REPO_ROOT = Path(__file__).parent.parent.resolve()
 USERS_FILE = REPO_ROOT / "context" / "users.yaml"
@@ -27,26 +29,20 @@ BUILD_CONTEXT = REPO_ROOT / "tools" / "build_context.py"
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from tools.users_loader import (  # noqa: E402
+    ADMIN_SYMBOL,
+    as_legacy_list,
+    derive_symbol,
+    find_by_display_name,
+    iter_users,
+    load_users,
+    save_users,
+)
+
 VALID_ROLES = ("admin", "member")
-VALID_CHANNELS = ("telegram", "whatsapp")
 
 
 # ── Low-level helpers ────────────────────────────────────────────────────────
-
-def _load() -> dict:
-    if not USERS_FILE.exists():
-        return {"users": []}
-    with open(USERS_FILE, encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-    if not data.get("users"):
-        data["users"] = []
-    return data
-
-
-def _save(data: dict) -> None:
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
-
 
 def _rebuild_context() -> None:
     """Re-run build_context.py so {PRIMARY_USER} resolves with updated data."""
@@ -64,13 +60,6 @@ def _rebuild_context() -> None:
               file=sys.stderr)
 
 
-def _find_user(data: dict, name: str) -> tuple[int, dict | None]:
-    for i, user in enumerate(data["users"]):
-        if user.get("name", "").lower() == name.lower():
-            return i, user
-    return -1, None
-
-
 def _apply_optional(container: dict, key: str, value: str | None) -> None:
     """Three-state update: None = skip, "" = clear, anything else = set."""
     if value is None:
@@ -81,13 +70,32 @@ def _apply_optional(container: dict, key: str, value: str | None) -> None:
         container[key] = value
 
 
+def _rebuild_with_symbols(users: dict, *, swap: dict[str, str] | None = None) -> dict:
+    """Rebuild the users dict, renaming any keys present in `swap` (old → new).
+
+    Preserves insertion order of the rest. Used by admin transfer where two
+    symbols change in the same operation: old admin's symbol moves from
+    'primary' to a slug, and the new admin's symbol moves to 'primary'.
+    """
+    swap = swap or {}
+    out: dict = {}
+    for sym, rec in users.items():
+        new_sym = swap.get(sym, sym)
+        out[new_sym] = rec
+    return out
+
+
 # ── Shared pure-Python functions ─────────────────────────────────────────────
 # These raise ValueError / KeyError on failure.  No CLI I/O, no sys.exit().
 
 def list_users() -> list[dict]:
-    """Return all household users."""
-    data = _load()
-    return data.get("users", [])
+    """Return all household users in legacy list-of-records shape.
+
+    Kept backward-compatible until step 6 in docs/identity-resolution.md.
+    The portal and any shell script that JSON-parses `manage_users.py list`
+    sees `{name, role, channels, briefing_style}` — same as v1.
+    """
+    return as_legacy_list(load_users(USERS_FILE))
 
 
 def add_user(
@@ -98,32 +106,39 @@ def add_user(
     briefing_style: str | None = None,
 ) -> dict:
     """Add a household user.  Raises ValueError on conflicts."""
-    data = _load()
-    _, existing = _find_user(data, name)
-    if existing:
+    data = load_users(USERS_FILE)
+    users: dict = data.setdefault("users", {})
+
+    # Duplicate display_name check (case-insensitive).
+    existing_symbol, _ = find_by_display_name(data, name)
+    if existing_symbol is not None:
         raise ValueError(f"User '{name}' already exists. Use update to modify.")
 
     if role == "admin":
-        for user in data["users"]:
-            if user.get("role") == "admin":
+        for sym, rec in users.items():
+            if rec.get("role") == "admin":
                 raise ValueError(
-                    f"Admin already exists ({user['name']}). "
+                    f"Admin already exists ({rec.get('display_name')}). "
                     "Remove or change their role first."
                 )
 
-    new_user: dict = {"name": name, "role": role, "channels": {}}
+    symbol = derive_symbol(name, role, users.keys())
+    record: dict = {"display_name": name, "role": role, "channels": {}}
     if telegram:
-        new_user["channels"]["telegram"] = telegram
+        record["channels"]["telegram"] = telegram
     if whatsapp:
-        new_user["channels"]["whatsapp"] = whatsapp
+        record["channels"]["whatsapp"] = whatsapp
     if briefing_style:
-        new_user["briefing_style"] = briefing_style
+        record["briefing_style"] = briefing_style
+    if not record["channels"]:
+        record.pop("channels")
 
-    data["users"].append(new_user)
-    _save(data)
+    users[symbol] = record
+    save_users(data, USERS_FILE)
     _rebuild_context()
-    _emit_member_event("household_member_added", name, role, len(data["users"]))
-    return new_user
+    _emit_member_event("household_member_added", name, role, len(users))
+    # Return the legacy-shape record so callers (portal) see `name`.
+    return _legacy_view(symbol, record)
 
 
 def update_user(
@@ -137,49 +152,81 @@ def update_user(
     """Update an existing household user.
 
     Admin transfer: promoting a member to admin automatically demotes the
-    current admin to member in the same operation (atomic swap).
+    current admin to member in the same operation (atomic swap). When this
+    happens the affected symbols are also rotated — the new admin takes
+    'primary', the demoted admin gets a slug-based symbol. This is the
+    whole point of stable symbols: HEARTBEAT.md `primary:whatsapp`
+    continues to mean "the current admin" without rewriting any references.
 
     Raises KeyError if user not found, ValueError on validation failures.
     """
-    data = _load()
-    idx, user = _find_user(data, name)
+    data = load_users(USERS_FILE)
+    users: dict = data.setdefault("users", {})
+    symbol, user = find_by_display_name(data, name)
     if user is None:
         raise KeyError(f"User '{name}' not found.")
 
+    # Snapshot what we may need to know before mutating.
+    current_role = user.get("role")
+    swap: dict[str, str] = {}
+
     if role is not None:
-        if role == "admin" and user.get("role") != "admin":
-            # Atomic admin transfer: demote the current admin first
-            for other in data["users"]:
+        if role == "admin" and current_role != "admin":
+            # Atomic admin transfer.
+            for other_sym, other in list(users.items()):
+                if other_sym == symbol:
+                    continue
                 if other.get("role") == "admin":
                     other["role"] = "member"
-        if role != "admin" and user.get("role") == "admin":
+                    # Other admin loses 'primary'; give them a slug-based symbol.
+                    available = (set(users.keys()) | {symbol, ADMIN_SYMBOL}) - {other_sym}
+                    new_other_sym = derive_symbol(
+                        other.get("display_name") or "",
+                        "member",
+                        available,
+                    )
+                    if new_other_sym != other_sym:
+                        swap[other_sym] = new_other_sym
+            # Target user becomes admin → symbol moves to 'primary'.
+            if symbol != ADMIN_SYMBOL:
+                swap[symbol] = ADMIN_SYMBOL
+        if role != "admin" and current_role == "admin":
             raise ValueError(
                 "Cannot demote the only admin. Promote another user to admin first."
             )
         user["role"] = role
 
     if rename:
-        collision_idx, collision = _find_user(data, rename)
-        if collision and collision_idx != idx:
+        # display_name rename. Symbol stays put — that's the durable id.
+        collision_sym, collision = find_by_display_name(data, rename)
+        if collision is not None and collision_sym != symbol:
             raise ValueError(f"User '{rename}' already exists.")
-        user["name"] = rename
+        user["display_name"] = rename
 
-    if not user.get("channels"):
+    if "channels" not in user or not isinstance(user.get("channels"), dict):
         user["channels"] = {}
     _apply_optional(user["channels"], "telegram", telegram)
     _apply_optional(user["channels"], "whatsapp", whatsapp)
+    if not user["channels"]:
+        user.pop("channels", None)
     _apply_optional(user, "briefing_style", briefing_style)
 
-    data["users"][idx] = user
-    _save(data)
+    if swap:
+        data["users"] = _rebuild_with_symbols(users, swap=swap)
+        # `user` reference still points at the same record dict; the swap
+        # only renames keys, not values.
+        symbol = swap.get(symbol, symbol)
+
+    save_users(data, USERS_FILE)
     _rebuild_context()
-    return user
+    return _legacy_view(symbol, user)
 
 
 def remove_user(name: str) -> dict:
     """Remove a household user.  Raises KeyError / ValueError."""
-    data = _load()
-    idx, user = _find_user(data, name)
+    data = load_users(USERS_FILE)
+    users: dict = data.setdefault("users", {})
+    symbol, user = find_by_display_name(data, name)
     if user is None:
         raise KeyError(f"User '{name}' not found.")
 
@@ -187,11 +234,23 @@ def remove_user(name: str) -> dict:
         raise ValueError("Cannot remove the admin user. Change their role first.")
 
     removed_role = user.get("role", "member")
-    data["users"].pop(idx)
-    _save(data)
+    users.pop(symbol, None)
+    save_users(data, USERS_FILE)
     _rebuild_context()
-    _emit_member_event("household_member_removed", name, removed_role, len(data["users"]))
+    _emit_member_event("household_member_removed", name, removed_role, len(users))
     return {"status": "removed", "name": name}
+
+
+def _legacy_view(symbol: str, record: dict) -> dict:
+    """Render a single v2 record as the legacy v1 shape (with `name`)."""
+    view: dict = {
+        "name": record.get("display_name") or "",
+        "role": record.get("role") or "member",
+        "channels": dict(record.get("channels") or {}),
+    }
+    if (style := record.get("briefing_style")):
+        view["briefing_style"] = style
+    return view
 
 
 def _emit_member_event(
@@ -238,16 +297,16 @@ def _resolve_requester() -> dict | None:
     if not sender_id or not channel:
         return None
     try:
-        users = _load().get("users", [])
+        data = load_users(USERS_FILE)
     except Exception:
         # Corrupt or unreadable users.yaml → fail closed.
         return None
-    for user in users:
+    for _, record in iter_users(data):
         # str() coerce — channel IDs are stored as strings today, but a
         # hand-edit or future schema change could land an int. Env vars are
         # always strings, so normalise both sides.
-        if str(user.get("channels", {}).get(channel)) == sender_id:
-            return user
+        if str((record.get("channels") or {}).get(channel)) == sender_id:
+            return record
     return None
 
 

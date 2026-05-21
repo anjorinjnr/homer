@@ -77,20 +77,17 @@ def _get_template_vars() -> dict:
     if shared_instructions_path.exists():
         shared_instructions = shared_instructions_path.read_text(encoding="utf-8")
 
-    # Resolve primary user (admin) from context/users.yaml
-    # Falls back to parsing household.md if users.yaml doesn't exist yet
+    # Resolve primary user (admin) from context/users.yaml.
+    # Falls back to parsing household.md if users.yaml doesn't exist yet.
     primary_user = ""
     users_path = CONTEXT_DIR / "users.yaml"
     if users_path.exists():
         try:
-            import yaml
-            with open(users_path, encoding="utf-8") as f:
-                users_data = yaml.safe_load(f)
-            if isinstance(users_data, dict):
-                for user in users_data.get("users") or []:
-                    if isinstance(user, dict) and user.get("role") == "admin":
-                        primary_user = user.get("name", "")
-                        break
+            from tools.users_loader import iter_users, load_users
+            for _sym, record in iter_users(load_users(users_path)):
+                if record.get("role") == "admin":
+                    primary_user = record.get("display_name", "")
+                    break
         except Exception as e:
             import sys
             print(f"⚠️  WARNING: Failed to parse context/users.yaml: {e}",
