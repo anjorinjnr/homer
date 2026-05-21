@@ -9,11 +9,19 @@ import pytest
 import yaml
 
 def _load(path: Path) -> dict:
-    with open(path) as f:
-        return yaml.safe_load(f) or {}
+    """Inspect users.yaml for assertions, returning the legacy v1 list shape.
+
+    The on-disk file may be v1 (test fixture seeds it as v1) or v2 (after any
+    mutation, since manage_users.py writes v2 going forward). Tests assert
+    against the legacy shape because that's what their assertions were
+    written for; the loader handles the schema difference."""
+    from tools.users_loader import as_legacy_list, load_users
+    return {"users": as_legacy_list(load_users(path))}
 
 
 def _save(path: Path, data: dict) -> None:
+    """Write a v1-shape fixture to disk. The loader auto-migrates v1 → v2
+    on first read, which is what the fixtures want to exercise."""
     with open(path, "w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
@@ -541,7 +549,10 @@ class TestRequesterCheck:
         monkeypatch.setenv("NANOBOT_SENDER_CHANNEL", "telegram")
         from tools.manage_users import _resolve_requester
         user = _resolve_requester()
-        assert user is not None and user["name"] == "Alice"
+        # _resolve_requester is internal and returns the v2 record directly
+        # (display_name, not name). _require_admin_requester downstream only
+        # consults `role`, so the field rename is invisible to callers.
+        assert user is not None and user["display_name"] == "Alice"
 
     def test_refuses_member_sender(self, users_file, capsys, as_member):
         """A member-role user can't escalate themselves to admin."""

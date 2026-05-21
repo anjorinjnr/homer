@@ -126,21 +126,22 @@ def build_map(
     if not users_yaml_path.exists():
         return {}
     try:
-        data = yaml.safe_load(users_yaml_path.read_text()) or {}
-    except yaml.YAMLError:
+        from tools.users_loader import iter_users, load_users
+        data = load_users(users_yaml_path)
+    except (ValueError, yaml.YAMLError):
         return {}
-    users = data.get("users") or []
     lid_to_phone = _load_lid_map(lid_map_path)
 
     mapping: dict[str, str] = {}
-    for user in users:
-        if not isinstance(user, dict):
-            continue
-        name = (user.get("name") or "").strip()
+    for _symbol, record in iter_users(data):
+        name = (record.get("display_name") or "").strip()
         if not name:
             continue
+        # Analytics keys slugify display_name (not symbol) so that renaming a
+        # user breaks historical continuity — that's deliberate; the slug
+        # tracks who they are now.
         person_key = f"person:{_slugify(name)}"
-        channels = user.get("channels") or {}
+        channels = record.get("channels") or {}
         if not isinstance(channels, dict):
             continue
         for channel, identifier in channels.items():

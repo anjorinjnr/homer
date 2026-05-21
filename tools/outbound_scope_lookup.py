@@ -64,20 +64,22 @@ def _load_household_members() -> dict[str, set[str]]:
     Email: lowercased + Gmail-normalized (matches scope_store contract).
     """
     try:
-        text = USERS_YAML.read_text()
-    except FileNotFoundError:
-        return _empty_members()
-    try:
-        data = yaml.safe_load(text) or {}
-    except yaml.YAMLError as e:
+        from tools.users_loader import iter_users, load_users
+        # load_users returns an empty v2 record for a missing file, so no
+        # pre-existence check needed — the mtime cache in _members_now still
+        # short-circuits when nothing has changed.
+        data = load_users(USERS_YAML)
+    except (yaml.YAMLError, ValueError) as e:
         logger.warning("outbound_scope_lookup: failed to parse {}: {}", USERS_YAML, e)
         return _empty_members()
 
     members: dict[str, set[str]] = {
         "telegram": set(), "whatsapp": set(), "email": set(),
     }
-    for user in data.get("users", []) or []:
-        channels = user.get("channels", {}) or {}
+    for _symbol, record in iter_users(data):
+        channels = record.get("channels") or {}
+        if not isinstance(channels, dict):
+            continue
         if (tg := channels.get("telegram")):
             members["telegram"].add(_digits(str(tg)))
         if (wa := channels.get("whatsapp")):

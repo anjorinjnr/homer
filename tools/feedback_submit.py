@@ -184,7 +184,8 @@ def load_household_names(workspace_dir):
 
 
 def load_users_yaml_names(context_dir):
-    """Pull canonical names from `context/users.yaml` (the user registry).
+    """Pull canonical display names from `context/users.yaml` (the user
+    registry).
 
     USER.md is best-effort — it depends on whichever bullet conventions the
     household has typed into household.md. users.yaml is the structured source
@@ -196,19 +197,15 @@ def load_users_yaml_names(context_dir):
     if not users_yaml.exists():
         return []
     try:
-        import yaml
-    except ImportError:
-        return []
-    try:
-        data = yaml.safe_load(users_yaml.read_text(encoding="utf-8"))
-    except (OSError, yaml.YAMLError):
-        return []
-    if not isinstance(data, dict):
+        # Defer the loader import: keep this module loadable on hosts
+        # without PyYAML (the loader hard-imports yaml).
+        from tools.users_loader import iter_users, load_users
+        data = load_users(users_yaml)
+    except Exception:
         return []
     names = set()
-    for user in (data.get("users") or []):
-        if isinstance(user, dict):
-            _add_name(names, user.get("name"))
+    for _symbol, record in iter_users(data):
+        _add_name(names, record.get("display_name"))
     return sorted(names)
 
 
