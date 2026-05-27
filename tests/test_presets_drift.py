@@ -5,8 +5,11 @@ move with it or the runtime resolution lies:
 
 - `agent/AGENTS.md` — the prose table the agent reads at runtime to decide
   which preset matches a user's "switch to X" request.
+- `config/config.json.template` — heartbeat task `Model:` resolution for
+  the main gateway, non-hosted homer.
+- `config/config.hosted.json.template` — same, for hosted tenants.
 - `config/guest_config.json.template` — heartbeat task `Model:` resolution
-  for non-hosted homer.
+  for the guest gateway, non-hosted homer.
 - `config/guest_config.hosted.json.template` — same, for hosted tenants.
 
 If any of these drift, the test fails with a specific diff so it's clear
@@ -52,7 +55,7 @@ def _agents_md_table() -> dict[str, str]:
 
 
 def _template_model_presets(name: str) -> dict[str, str]:
-    """Parse the modelPresets dict out of a guest_config template.
+    """Parse the modelPresets dict out of a nanobot config template.
 
     The templates aren't valid JSON (they contain `${VAR}` placeholders),
     so we substring the modelPresets object and parse just that. The
@@ -80,6 +83,8 @@ def test_agents_md_table_matches_presets() -> None:
 
 
 @pytest.mark.parametrize("template", [
+    "config.json.template",
+    "config.hosted.json.template",
     "guest_config.json.template",
     "guest_config.hosted.json.template",
 ])
