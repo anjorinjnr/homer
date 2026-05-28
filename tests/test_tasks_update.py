@@ -1475,6 +1475,33 @@ def test_add_task_accepts_user_symbol_recipients(tmp_path, users_yaml, monkeypat
     assert "Recipients: resident:whatsapp" in content
 
 
+@pytest.mark.parametrize("missing", [None, "", "   "])
+def test_add_task_requires_recipients(tmp_path, monkeypatch, capsys, missing):
+    """add_task() — the function, not just the CLI — must reject a missing
+    or blank recipients value. The CLI's arg-parse already requires
+    --recipients, but the function is called programmatically (the portal's
+    task_service.add_task seeds system tasks through it). Without this
+    guard, a caller that omits recipients writes a task the heartbeat
+    dispatcher (Rule 3) then refuses at every tick — silently
+    undeliverable. Regression net: the 2026-05-27 new-reminder failures.
+
+    No users.yaml fixture here on purpose — the required-check fires
+    before validate_recipients (which reads users.yaml), so this also
+    proves the order: 'missing' is reported as 'required', not as
+    'unknown symbol'.
+    """
+    hb = _make_empty_heartbeat(tmp_path)
+    monkeypatch.setattr(tu, "HEARTBEAT_FILE", hb)
+
+    with pytest.raises(SystemExit) as exc:
+        tu.add_task(desc="Remind: do X", schedule="2030-01-01", recipients=missing)
+    assert exc.value.code == 1
+    out = json.loads(capsys.readouterr().out)
+    assert "Recipients is required" in out["error"]
+    # Nothing written.
+    assert "Remind: do X" not in hb.read_text()
+
+
 def test_edit_task_rejects_raw_lid_recipients(tmp_path, users_yaml, monkeypatch, capsys):
     """--edit --recipients also validates. A successful add followed by an
     edit-to-bad value must leave the original Recipients untouched."""
