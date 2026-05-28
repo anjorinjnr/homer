@@ -362,16 +362,32 @@ def add_task(desc: str, schedule: str, until: str | None = None,
              recur: str | None = None, recipients: str | None = None,
              model: str | None = None, task_type: str | None = None,
              goal: str | None = None) -> None:
-    # Validate Recipients BEFORE acquiring the heartbeat lock so a bad
-    # value fails fast with a clear error rather than briefly holding the
-    # lock. Done outside the file I/O because the validation reads
-    # users.yaml, which the lock doesn't cover anyway.
-    if recipients:
-        try:
-            validate_recipients(recipients)
-        except RecipientsValidationError as e:
-            print(json.dumps({"error": str(e)}))
-            sys.exit(1)
+    # Recipients is mandatory for EVERY task. The CLI enforces this at
+    # arg-parse (`--add requires --recipients`), but the function itself
+    # is also called programmatically — most importantly by the portal's
+    # task_service.add_task when it seeds system tasks per tenant. Without
+    # this guard a programmatic caller could write a Recipients-less task
+    # that the heartbeat parser (Rule 3) then refuses at every tick,
+    # silently undeliverable forever. Enforce here so all callers are
+    # protected, not just the CLI.
+    if not recipients or not recipients.strip():
+        print(json.dumps({
+            "error": (
+                "Recipients is required — every task must declare who it "
+                "delivers to (e.g. 'primary:whatsapp'). A Recipients-less "
+                "task is refused by the heartbeat dispatcher and never fires."
+            )
+        }))
+        sys.exit(1)
+    # Validate the value BEFORE acquiring the heartbeat lock so a bad value
+    # fails fast with a clear error rather than briefly holding the lock.
+    # Done outside the file I/O because the validation reads users.yaml,
+    # which the lock doesn't cover anyway.
+    try:
+        validate_recipients(recipients)
+    except RecipientsValidationError as e:
+        print(json.dumps({"error": str(e)}))
+        sys.exit(1)
 
     with heartbeat_lock(HEARTBEAT_FILE.parent):
         content = read_heartbeat()
