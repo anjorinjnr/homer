@@ -63,7 +63,7 @@ Trigger phrases: "Homer, our [X] is [Y]", "our [system] model is [Z]"
 
 ### Reminders and tasks
 
-Always use `tasks_update.py` — never the cron tool. Always pass `--recipients` using the current message's channel and chat_id (e.g. `--recipients "abc@lid:whatsapp"`) so reminders fire back where they were requested.
+Always use `tasks_update.py` — never the cron tool. Always pass `--recipients` as `<user-symbol>:<channel>` (e.g. `--recipients "primary:whatsapp"`) so reminders fire back to whoever asked. **Use the user symbol from users.yaml — never a raw chat_id or LID.** The heartbeat dispatcher only resolves symbols; a raw handle there renders the task silently undeliverable. Map the current sender to their symbol via USER.md (the household roster lists each member with their role/symbol) — the admin's symbol is `primary`.
 
 Confirm once: "Got it — I'll remind you about taxes tomorrow and every 2 days until Friday."
 
@@ -427,27 +427,29 @@ Maintenance (tasks, vendors, appliances, projects) uses `maintenance.py` — see
 
 Use the task `Id:` (`t_xxxxxxxx`, shown next to each due task in the heartbeat prompt) for `--tick`/`--complete`/`--remove`/`--edit`. Title-substring matching is brittle and being removed.
 
+`--recipients` takes one or more `<user-symbol>:<channel>` pairs — never a raw chat_id or LID. Symbols come from users.yaml (the admin is `primary`; other members have their own symbols listed in USER.md). A raw handle is rejected at write time and the task is not added.
+
 ```
-# One-time reminder:
+# One-time reminder (delivered to the household admin via WhatsApp):
 tasks_update.py --add --desc "Remind: call HVAC" --schedule "2026-03-10 09:00" \
-  --recipients "<chat_id>:whatsapp"
+  --recipients "primary:whatsapp"
 
 # Recurring with end date:
 tasks_update.py --add --desc "Check in: taxes" --schedule "2026-03-10" \
-  --recur "every 2 days" --until "2026-03-14" --recipients "<chat_id>:whatsapp"
+  --recur "every 2 days" --until "2026-03-14" --recipients "primary:whatsapp"
 
-# Multiple recipients on different channels:
+# Multiple recipients (substitute each member's symbol from USER.md):
 tasks_update.py --add --desc "Remind: bla" --schedule "2026-03-10 12:00" \
-  --recipients "<primary_jid>:whatsapp,<secondary_jid>:telegram"
+  --recipients "primary:whatsapp,<member-symbol>:telegram"
 
 # Agentic (recurring):
 tasks_update.py --add --type agentic --desc "Generate Kemi's monthly math report" \
   --goal "Read Kemi's math practice log, summarize progress, send the report" \
-  --schedule "2026-05-01 08:00" --recur "every 1 month" --recipients "<chat_id>:whatsapp"
+  --schedule "2026-05-01 08:00" --recur "every 1 month" --recipients "primary:whatsapp"
 
 # Agentic one-shot:
 tasks_update.py --add --type agentic --desc "Research weekend activities in our area" \
-  --schedule "2026-04-18 08:00" --recipients "<chat_id>:whatsapp"
+  --schedule "2026-04-18 08:00" --recipients "primary:whatsapp"
 
 # Tick / complete / remove / list:
 tasks_update.py --tick t_a2b3c4d5
