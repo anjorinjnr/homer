@@ -1334,3 +1334,182 @@ def test_backfill_skips_block_without_schedule(tmp_path, monkeypatch, capsys):
     foo_block = re.search(r"### Foo\n(.*?)(?=\n###|\n## )", content_after, re.DOTALL)
     assert foo_block is not None
     assert "Id:" not in foo_block.group(1)
+
+
+# ── Recipients validation ────────────────────────────────────────────────────
+#
+# tasks_update.py refuses --recipients values that aren't known user symbols
+# (e.g. a raw chat-id or LID). Without this check, the heartbeat dispatcher's
+# `users_loader.resolve_handle` can't resolve the value and the task is
+# silently undeliverable — every tick logs "had Recipients but none resolved"
+# and the task retries forever without ever firing.
+#
+# Regression net for the 2026-05-27-aftermath bug where the agent kept
+# writing `Recipients: <raw_lid>:whatsapp` into new reminder tasks.
+
+
+import yaml
+
+
+@pytest.fixture()
+def users_yaml(tmp_path, monkeypatch):
+    """Provision a minimal users.yaml with one symbol and point homer's
+    users_loader at it. Reset its module-level mtime cache so the new path
+    is honored on the next call."""
+    path = tmp_path / "users.yaml"
+    path.write_text(yaml.safe_dump({
+        "schema_version": 2,
+        "users": {
+            "resident": {
+                "display_name": "Resident",
+                "role": "primary",
+                "channels": {"whatsapp": "15550000001"},
+            },
+            "second": {
+                "display_name": "Second",
+                "role": "member",
+                "channels": {"whatsapp": "15550000002"},
+            },
+        },
+    }))
+    monkeypatch.setenv("HOMER_USERS_YAML", str(path))
+    # Bust any caches in tasks_update's transitive imports — users_loader
+    # uses an mtime-checked load.
+    import sys
+    sys.modules.pop("tools.outbound_scope_lookup", None)
+    return path
+
+
+def test_validate_recipients_accepts_known_symbol(users_yaml):
+    # Doesn't raise.
+    tu.validate_recipients("resident:whatsapp")
+
+
+def test_validate_recipients_accepts_multiple_known_symbols(users_yaml):
+    tu.validate_recipients("resident:whatsapp,second:whatsapp")
+
+
+def test_validate_recipients_accepts_empty(users_yaml):
+    # Empty / blank values aren't an error here — the parent --add caller
+    # enforces required-ness separately, and `--edit` allows ""-clearing.
+    tu.validate_recipients("")
+    tu.validate_recipients("   ")
+
+
+def test_validate_recipients_rejects_raw_lid(users_yaml):
+    with pytest.raises(tu.RecipientsValidationError) as exc:
+        tu.validate_recipients("15550000001@lid.whatsapp.net:whatsapp")
+    msg = str(exc.value)
+    assert "is not a known user symbol" in msg
+
+
+def test_validate_recipients_suggests_symbol_for_known_handle(users_yaml):
+    """When the raw value is a recognised channel handle, point at the
+    matching user symbol so the caller can fix the command without
+    guessing."""
+    with pytest.raises(tu.RecipientsValidationError) as exc:
+        tu.validate_recipients("15550000001:whatsapp")
+    msg = str(exc.value)
+    assert "resident" in msg, f"missing 'resident' hint in: {msg}"
+
+
+def test_validate_recipients_rejects_missing_channel_suffix(users_yaml):
+    with pytest.raises(tu.RecipientsValidationError) as exc:
+        tu.validate_recipients("resident")
+    assert "missing ':channel'" in str(exc.value)
+
+
+def test_validate_recipients_rejects_mixed_good_and_bad(users_yaml):
+    """One bad token in a comma list still fails the whole call — partial
+    validation would silently let through undeliverable destinations."""
+    with pytest.raises(tu.RecipientsValidationError):
+        tu.validate_recipients("resident:whatsapp,15550000002@lid:whatsapp")
+
+
+# ── End-to-end: add_task / edit_task surface the validation error ───────────
+
+
+def _make_empty_heartbeat(tmp_path):
+    hb = tmp_path / "HEARTBEAT.md"
+    hb.write_text(
+        "# Heartbeat Tasks\n\n## User Tasks\n\n## Completed\n",
+        encoding="utf-8",
+    )
+    return hb
+
+
+def test_add_task_rejects_raw_lid_recipients(tmp_path, users_yaml, monkeypatch, capsys):
+    """The --add path must surface the validation error as a JSON error and
+    exit non-zero so the agent (or caller) sees the failure rather than
+    silently producing a stuck task."""
+    hb = _make_empty_heartbeat(tmp_path)
+    monkeypatch.setattr(tu, "HEARTBEAT_FILE", hb)
+
+    with pytest.raises(SystemExit) as exc:
+        tu.add_task(
+            desc="Remind: do X",
+            schedule="2030-01-01",
+            recipients="15550000001@lid.whatsapp.net:whatsapp",
+        )
+    assert exc.value.code == 1
+    out = json.loads(capsys.readouterr().out)
+    assert "error" in out
+    assert "not a known user symbol" in out["error"]
+    # And critically — the task was NOT written.
+    assert "Remind: do X" not in hb.read_text()
+
+
+def test_add_task_accepts_user_symbol_recipients(tmp_path, users_yaml, monkeypatch, capsys):
+    hb = _make_empty_heartbeat(tmp_path)
+    monkeypatch.setattr(tu, "HEARTBEAT_FILE", hb)
+
+    tu.add_task(
+        desc="Remind: do X",
+        schedule="2030-01-01",
+        recipients="resident:whatsapp",
+    )
+    out = json.loads(capsys.readouterr().out)
+    assert out["status"] == "added"
+    content = hb.read_text()
+    assert "Remind: do X" in content
+    assert "Recipients: resident:whatsapp" in content
+
+
+def test_edit_task_rejects_raw_lid_recipients(tmp_path, users_yaml, monkeypatch, capsys):
+    """--edit --recipients also validates. A successful add followed by an
+    edit-to-bad value must leave the original Recipients untouched."""
+    hb = tmp_path / "HEARTBEAT.md"
+    hb.write_text(
+        "# Heartbeat Tasks\n\n## User Tasks\n\n"
+        "### Remind: do X\nId: t_aaaa1111\nSchedule: 2030-01-01\n"
+        "Recipients: resident:whatsapp\nAdded: 2030-01-01\n\n"
+        "## Completed\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(tu, "HEARTBEAT_FILE", hb)
+
+    with pytest.raises(SystemExit) as exc:
+        tu.edit_task("do X", new_recipients="15550000002@lid:whatsapp")
+    assert exc.value.code == 1
+    assert "not a known user symbol" in json.loads(capsys.readouterr().out)["error"]
+    # Original Recipients line preserved.
+    assert "Recipients: resident:whatsapp" in hb.read_text()
+
+
+def test_edit_task_empty_recipients_clears(tmp_path, users_yaml, monkeypatch, capsys):
+    """Empty-string for --recipients on --edit clears the field — this path
+    bypasses validation (no value to validate). Lock in the existing
+    clear-by-empty-string behavior so the new validation hook can't
+    accidentally break it."""
+    hb = tmp_path / "HEARTBEAT.md"
+    hb.write_text(
+        "# Heartbeat Tasks\n\n## User Tasks\n\n"
+        "### Remind: do X\nId: t_aaaa1111\nSchedule: 2030-01-01\n"
+        "Recipients: resident:whatsapp\nAdded: 2030-01-01\n\n"
+        "## Completed\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(tu, "HEARTBEAT_FILE", hb)
+
+    tu.edit_task("do X", new_recipients="")
+    assert "Recipients:" not in hb.read_text()

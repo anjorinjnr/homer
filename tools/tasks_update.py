@@ -20,9 +20,14 @@ Type: [type]            (optional: "agentic" for tool-use tasks)
 Schedule: [schedule]
 Recur: [recur]          (optional)
 Until: [until]          (optional)
-Recipients: [id:channel,...]
+Recipients: [user-symbol:channel,...]  (e.g. primary:whatsapp,seun:whatsapp)
 Goal: [goal]            (optional: detailed instructions for agentic tasks)
 Added: [date]
+
+Recipients must use user symbols from users.yaml (`tools/manage_users.py
+list`). Raw chat-id / LID handles are rejected at write time — they'd
+render the task undeliverable because the heartbeat dispatcher only
+resolves symbols.
 """
 
 import argparse
@@ -45,6 +50,12 @@ REPO_ROOT = Path(__file__).parent.parent.resolve()
 # runs as a script (e.g. heartbeat exec'ing /opt/homer/tools/tasks_update.py).
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+
+from tools.users_loader import (  # noqa: E402
+    find_by_channel_handle,
+    iter_users,
+    load_users,
+)
 HEARTBEAT_FILE = REPO_ROOT / "context" / ".nanobot_workspace" / "HEARTBEAT.md"
 LOCAL_TZ = ZoneInfo("America/New_York")
 
@@ -65,6 +76,82 @@ def generate_task_id() -> str:
     raw = secrets.token_bytes(5)
     encoded = base64.b32encode(raw).decode("ascii").lower().rstrip("=")
     return f"t_{encoded}"
+
+
+# ── Recipients validation ────────────────────────────────────────────────────
+#
+# Recipients on a task block must use user symbols (e.g., `primary`, `seun`),
+# not raw chat-id/LID handles. The heartbeat dispatcher (nanobot
+# `_resolve_dispatch_target` → `users_loader.resolve_handle`) only knows
+# symbols; a raw handle written here renders the task undeliverable —
+# every tick logs "had Recipients but none resolved" and the task retries
+# forever without ever firing. This was the failure mode for new reminders
+# in the 2026-05-27 incident aftermath. Validate at write time so a bad
+# value is rejected with a helpful pointer to the right symbol rather than
+# silently producing a stuck task.
+
+class RecipientsValidationError(ValueError):
+    """Raised when --recipients contains a token that isn't a known user symbol."""
+
+
+def _parse_recipient_pair(token: str) -> tuple[str, str]:
+    """Split ``symbol:channel`` on the LAST colon — chat-id-looking handles
+    like ``ops@example.com:whatsapp`` would otherwise split wrong. The result
+    is still rejected by symbol validation downstream, but the split has to
+    survive to produce a clear error."""
+    if ":" not in token:
+        raise RecipientsValidationError(
+            f"recipient token {token!r} is missing ':channel' suffix; "
+            "expected e.g. 'primary:whatsapp'"
+        )
+    name, channel = token.rsplit(":", 1)
+    return name.strip(), channel.strip()
+
+
+def validate_recipients(recipients: str) -> None:
+    """Refuse Recipients values that contain anything other than known user
+    symbols. Raises :class:`RecipientsValidationError` with a remediation
+    message that names a suggested symbol when the offending token is a
+    recognizable raw handle (LID/phone/email).
+
+    No-ops when users.yaml has no configured users — there's nothing to
+    validate against and the dispatcher would already fail to resolve any
+    Recipients value, so write-time validation here would just shadow that
+    runtime error with a misleading "unknown symbol" message. Once any user
+    is added to users.yaml, full validation kicks in.
+    """
+    if not recipients or not recipients.strip():
+        return
+    users_data = load_users()
+    known_symbols = {symbol for symbol, _ in iter_users(users_data)}
+    if not known_symbols:
+        return  # fresh install / not yet configured — nothing to validate
+
+    for raw in recipients.split(","):
+        token = raw.strip()
+        if not token:
+            continue
+        symbol, channel = _parse_recipient_pair(token)
+        if symbol in known_symbols:
+            continue
+        # Try to suggest the right symbol if the value looks like a known
+        # raw handle (LID / phone / email): reverse-lookup by channel handle.
+        suggestion_symbol, _ = find_by_channel_handle(users_data, channel, symbol)
+        if suggestion_symbol:
+            hint = (
+                f" — that handle is registered as user symbol "
+                f"{suggestion_symbol!r}; use {suggestion_symbol}:{channel} instead"
+            )
+        else:
+            available = sorted(known_symbols) or ["(none configured)"]
+            hint = (
+                f". Known symbols: {', '.join(available)}. "
+                f"Run 'tools/manage_users.py list' to inspect."
+            )
+        raise RecipientsValidationError(
+            f"recipient {symbol!r} on channel {channel!r} is not a known "
+            f"user symbol{hint}"
+        )
 
 
 def is_task_id(s: str) -> bool:
@@ -275,6 +362,17 @@ def add_task(desc: str, schedule: str, until: str | None = None,
              recur: str | None = None, recipients: str | None = None,
              model: str | None = None, task_type: str | None = None,
              goal: str | None = None) -> None:
+    # Validate Recipients BEFORE acquiring the heartbeat lock so a bad
+    # value fails fast with a clear error rather than briefly holding the
+    # lock. Done outside the file I/O because the validation reads
+    # users.yaml, which the lock doesn't cover anyway.
+    if recipients:
+        try:
+            validate_recipients(recipients)
+        except RecipientsValidationError as e:
+            print(json.dumps({"error": str(e)}))
+            sys.exit(1)
+
     with heartbeat_lock(HEARTBEAT_FILE.parent):
         content = read_heartbeat()
         # Backfill any pre-existing blocks missing IDs so the file stays
@@ -557,6 +655,16 @@ def edit_task(keyword: str, new_desc: str | None = None, new_schedule: str | Non
         print(json.dumps({"error": "No fields to edit provided"}))
         sys.exit(1)
 
+    # Validate Recipients BEFORE the file-lock acquisition. Empty-string is
+    # the explicit "clear this field" sentinel, allowed unconditionally;
+    # any other value must use known symbols.
+    if new_recipients:
+        try:
+            validate_recipients(new_recipients)
+        except RecipientsValidationError as e:
+            print(json.dumps({"error": str(e)}))
+            sys.exit(1)
+
     parsed_extras: list[tuple[str, str]] = []
     for item in extra_fields or []:
         if "=" not in item:
@@ -683,7 +791,16 @@ def main() -> None:
     parser.add_argument("--schedule", help="Schedule: date (YYYY-MM-DD) or time phrase (for --add)")
     parser.add_argument("--recur", help="Recurrence: e.g. 'every 2 days' (for --add)")
     parser.add_argument("--until", help="End date YYYY-MM-DD (for --add with --recur)")
-    parser.add_argument("--recipients", help="Comma-separated list of alias:channel pairs, e.g. 'abc@lid:whatsapp' or 'primary:tg,sam:whatsapp' (for --add)")
+    parser.add_argument(
+        "--recipients",
+        help=(
+            "Comma-separated list of <user-symbol>:<channel> pairs, e.g. "
+            "'primary:whatsapp' or 'primary:whatsapp,seun:whatsapp'. "
+            "Symbols come from users.yaml (see 'tools/manage_users.py list'); "
+            "raw chat-id or LID handles are rejected — they'd render the task "
+            "undeliverable. Required for --add."
+        ),
+    )
     parser.add_argument(
         "--model",
         help=(
