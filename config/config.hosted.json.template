@@ -66,6 +66,7 @@
     "host": "0.0.0.0",
     "port": ${PORT},
     "heartbeat": {
+      "sendReasoning": true,
       "lastRunTracking": true,
       "intervalS": 60,
       "preCheckRegistry": {

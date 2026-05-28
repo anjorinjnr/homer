@@ -68,6 +68,7 @@
   "gateway": {
     "port": 18790,
     "heartbeat": {
+      "sendReasoning": true,
       "lastRunTracking": true,
       "intervalS": 60,
       "preCheckRegistry": {
