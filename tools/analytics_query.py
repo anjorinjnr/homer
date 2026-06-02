@@ -19,6 +19,7 @@ Usage:
     python tools/analytics_query.py --cost-report --month 2026-03
     python tools/analytics_query.py --trend --days 30              # daily message/cost trend
     python tools/analytics_query.py --weekly-report               # for heartbeat
+    python tools/analytics_query.py --recost                      # backfill cost_usd after a pricing change
 
 Output: JSON to stdout (SKIP: <reason> if nothing to report for heartbeat commands)
 """
@@ -83,21 +84,37 @@ TOOL_SKILL_MAP = {
     "payee_label_add":       "finance",
 }
 
-# -- Model cost table (USD per 1M tokens) -------------------------------------
-# Source: https://www.anthropic.com/pricing  (Anthropic models)
-#         https://ai.google.dev/gemini-api/docs/pricing  (Gemini models)
-# Last verified: 2026-04-06
-# All rates are per-million-token (input / output) in USD.
-MODEL_COSTS = {
-    "claude-haiku-4-5-20251001":       {"in": 1.00, "out": 5.00},
-    "claude-sonnet-4-6":               {"in": 3.00, "out": 15.00},
-    "gemini/gemini-2.5-flash":         {"in": 0.30, "out": 2.50},
-    "gemini/gemini-2.5-pro":           {"in": 1.25, "out": 10.00},
-    "gemini/gemini-3-flash-preview":   {"in": 0.50, "out": 3.00},
-    "gemini/gemini-3.1-flash-lite-preview": {"in": 0.25, "out": 1.50},
-    "gemini/gemini-3.1-pro-preview":   {"in": 2.00, "out": 12.00},
+# -- Model cost table ---------------------------------------------------------
+# Pricing is sourced from the canonical table in `nanobot.analytics.pricing`
+# — the SAME source `tools/analytics/llm_call.py` uses for per-call
+# `$ai_generation` telemetry — so the weekly usage report and the live
+# telemetry can't drift. (Before this, a hand-maintained table here had no
+# DeepSeek rows at all, so every default-tier message fell through to the
+# $1/$5 fallback and the report overcounted cost by ~10-25x.)
+#
+# The local `_FALLBACK_COSTS` table below is consulted ONLY when nanobot
+# isn't importable (e.g. running this script standalone outside the
+# container). Unknown models cost 0.0 in both paths — a missing price tier
+# should read as "unpriced", never as a phantom Haiku-rate charge.
+try:
+    from nanobot.analytics.pricing import estimate_cost_usd as _canonical_cost_usd
+except Exception:  # nanobot package unavailable (standalone/dev invocation)
+    _canonical_cost_usd = None
+
+# Best-effort mirror (USD per 1M tokens, input/output) for the standalone
+# fallback path. Keyed on the bare ids `read_current_model()` emits.
+_FALLBACK_COSTS = {
+    "deepseek/deepseek-v4-flash":      {"in": 0.0983, "out": 0.1966},
+    "deepseek/deepseek-v4-pro":        {"in": 0.4350, "out": 0.8700},
+    "deepseek/deepseek-v3.2":          {"in": 0.2288, "out": 0.3432},
+    "claude-haiku-4-5-20251001":       {"in": 1.00,   "out": 5.00},
+    "claude-sonnet-4-6":               {"in": 3.00,   "out": 15.00},
+    "gemini/gemini-2.5-flash":         {"in": 0.075,  "out": 0.30},
+    "gemini/gemini-2.5-pro":           {"in": 1.25,   "out": 5.00},
+    "gemini/gemini-3-flash-preview":   {"in": 0.30,   "out": 2.50},
+    "gemini/gemini-3.1-pro-preview":   {"in": 1.25,   "out": 10.00},
 }
-DEFAULT_COST = {"in": 1.00, "out": 5.00}  # fallback
+_FALLBACK_DEFAULT = {"in": 0.0, "out": 0.0}  # unknown → 0 (mirrors canonical)
 
 CHARS_PER_TOKEN = 4  # rough estimate (~4 chars per token)
 
@@ -182,7 +199,19 @@ def read_current_model():
 
 
 def estimate_cost(model, tokens_in, tokens_out):
-    rates = MODEL_COSTS.get(model, DEFAULT_COST)
+    """USD estimate for one call, delegating to the canonical price table.
+
+    Uses `nanobot.analytics.pricing.estimate_cost_usd` when importable (it
+    normalizes bare ids like `deepseek/deepseek-v4-flash` to the
+    OpenRouter-prefixed price key and returns 0.0 for unpriced models), and
+    falls back to the local `_FALLBACK_COSTS` mirror only when nanobot is
+    unavailable. We don't pass cache-read tokens because the session-log
+    sync doesn't track the cached subset separately."""
+    if _canonical_cost_usd is not None:
+        return _canonical_cost_usd(
+            model, input_tokens=tokens_in, output_tokens=tokens_out
+        )
+    rates = _FALLBACK_COSTS.get(model, _FALLBACK_DEFAULT)
     return (tokens_in * rates["in"] + tokens_out * rates["out"]) / 1_000_000
 
 
@@ -761,6 +790,31 @@ def query_weekly_report(conn):
     }
 
 
+def recost_all(conn):
+    """Recompute `cost_usd` for every stored row from its model + tokens.
+
+    Cost is baked into each row at sync time, so a pricing-table fix (e.g.
+    adding the DeepSeek default tier) does NOT retroactively correct rows
+    already in the DB — and the weekly report sums those stored values.
+    Run this once after a pricing change to backfill historical rows."""
+    rows = conn.execute(
+        "SELECT id, model_used, tokens_in, tokens_out, cost_usd FROM messages"
+    ).fetchall()
+    updated = 0
+    delta = 0.0
+    for r in rows:
+        new_cost = estimate_cost(r["model_used"], r["tokens_in"], r["tokens_out"])
+        if abs(new_cost - (r["cost_usd"] or 0.0)) > 1e-12:
+            conn.execute(
+                "UPDATE messages SET cost_usd = ? WHERE id = ?", (new_cost, r["id"])
+            )
+            delta += new_cost - (r["cost_usd"] or 0.0)
+            updated += 1
+    conn.commit()
+    return {"rows_total": len(rows), "rows_updated": updated,
+            "net_cost_delta_usd": round(delta, 4)}
+
+
 # -- Main ---------------------------------------------------------------------
 
 def main():
@@ -782,6 +836,8 @@ def main():
                       help="Weekly usage report (used by heartbeat)")
     mode.add_argument("--trend",         action="store_true",
                       help="Daily message and cost trend")
+    mode.add_argument("--recost",        action="store_true",
+                      help="Recompute cost_usd for all stored rows (run after a pricing change)")
 
     parser.add_argument("--days",  type=int, default=7,
                         help="Number of days to look back (default: 7)")
@@ -797,6 +853,13 @@ def main():
 
         if args.sync:
             result = run_sync(conn)
+            print(json.dumps(result, indent=2))
+            return
+
+        if args.recost:
+            # Sync first so newly-arrived rows get the corrected price too.
+            run_sync(conn)
+            result = recost_all(conn)
             print(json.dumps(result, indent=2))
             return
 

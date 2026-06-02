@@ -123,10 +123,34 @@ def test_estimate_cost_known_model():
     assert abs(cost - expected) < 1e-9
 
 
+def test_estimate_cost_deepseek_default_tier():
+    """Regression: the default tier emits a bare `deepseek/...` id. Before
+    the canonical-pricing switch this fell through to the $1/$5 Haiku
+    fallback and overcounted cost ~10-25x. It must never price at the Haiku
+    fallback again — whether nanobot's canonical table is current (DeepSeek
+    rate) or stale (0.0), the cost is far below the old $6/MTok-pair."""
+    cost = aq.estimate_cost("deepseek/deepseek-v4-flash", 1_000_000, 1_000_000)
+    haiku_fallback = (1_000_000 * 1.00 + 1_000_000 * 5.00) / 1_000_000  # = 6.0
+    assert cost < haiku_fallback / 10
+
+
+def test_estimate_cost_deepseek_fallback_path():
+    """With nanobot unavailable, the local fallback table still prices the
+    DeepSeek default tier (input 0.0983 + output 0.1966 per MTok)."""
+    import pytest as _pytest
+    saved = aq._canonical_cost_usd
+    aq._canonical_cost_usd = None
+    try:
+        cost = aq.estimate_cost("deepseek/deepseek-v4-flash", 1_000_000, 1_000_000)
+    finally:
+        aq._canonical_cost_usd = saved
+    assert cost == _pytest.approx(0.0983 + 0.1966)
+
+
 def test_estimate_cost_unknown_model():
     cost = aq.estimate_cost("unknown-model", 1000, 0)
-    # Falls back to DEFAULT_COST
-    assert cost > 0
+    # Unpriced models contribute 0.0 — never a phantom fallback charge.
+    assert cost == 0.0
 
 
 # -- ts_delta_ms --------------------------------------------------------------
@@ -335,6 +359,35 @@ def test_query_daily_trend(tmp_db):
     # All messages should be accounted for
     total = sum(d["messages"] for d in result["data"])
     assert total == 3
+
+
+def test_recost_all_fixes_stale_deepseek_rows(tmp_db, monkeypatch):
+    """A row synced with the wrong (Haiku-fallback) cost gets corrected to
+    the DeepSeek rate when recost runs — this is the path that makes the
+    pricing fix visible in the weekly report's historical sum.
+
+    Forces the local-fallback price path so the assertion is deterministic
+    regardless of which nanobot pricing version is installed in the venv."""
+    monkeypatch.setattr(aq, "_canonical_cost_usd", None)
+    stale_cost = (1_000_000 * 1.00 + 1_000_000 * 5.00) / 1_000_000  # old $1/$5 fallback = 6.0
+    tmp_db.execute(
+        "INSERT INTO messages (timestamp, session_key, user_id, user_name, channel, "
+        "direction, skill_used, model_used, tokens_in, tokens_out, cost_usd, "
+        "duration_ms, source_file, source_line) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("2026-06-01T00:00:00+00:00", "wa_1", "u1", "alex", "whatsapp", "inbound",
+         None, "deepseek/deepseek-v4-flash", 1_000_000, 1_000_000, stale_cost,
+         0, "s.jsonl", 1),
+    )
+    tmp_db.commit()
+
+    result = aq.recost_all(tmp_db)
+    assert result["rows_updated"] == 1
+    assert result["net_cost_delta_usd"] < 0  # cost went down
+
+    new_cost = tmp_db.execute("SELECT cost_usd FROM messages").fetchone()["cost_usd"]
+    # v4-flash via the fallback table: 0.0983 in + 0.1966 out per MTok.
+    assert new_cost == pytest.approx(0.0983 + 0.1966)
+    assert new_cost < stale_cost
 
 
 def test_query_daily_trend_user_filter(tmp_db):
