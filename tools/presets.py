@@ -30,7 +30,10 @@ class Preset(TypedDict):
 
 PRESETS: dict[str, Preset] = {
     "auto":             {"model": "openrouter/auto",                "provider": "openrouter"},
-    "cheap":            {"model": "deepseek/deepseek-v3.2",         "provider": "openrouter"},
+    "cheap":            {"model": "deepseek/deepseek-v4-flash",      "provider": "openrouter"},
+
+    "deepseek-flash":   {"model": "deepseek/deepseek-v4-flash",      "provider": "openrouter"},
+    "deepseek-pro":     {"model": "deepseek/deepseek-v4-pro",        "provider": "openrouter"},
 
     "gemini-fast":      {"model": "google/gemini-3-flash-preview",  "provider": "openrouter"},
     "gemini-balanced":  {"model": "google/gemini-2.5-pro",          "provider": "openrouter"},
@@ -47,7 +50,7 @@ PRESETS: dict[str, Preset] = {
     # Internal alias retained for the default-tier heartbeat path (used by
     # render_household_env when HOMER_HEARTBEAT_MODEL is unset). Same SKU
     # as `cheap`; named for clarity at the call site.
-    "default-cheap":    {"model": "deepseek/deepseek-v3.2",         "provider": "openrouter"},
+    "default-cheap":    {"model": "deepseek/deepseek-v4-flash",      "provider": "openrouter"},
 }
 
 

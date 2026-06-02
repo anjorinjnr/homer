@@ -123,7 +123,10 @@ MCP secrets (API keys, auth headers) go directly into the portal so they're encr
 "Switch to claude" / "use the cheapest" / "let it pick" → match to the closest preset:
 
 - `auto`             → openrouter/auto (let OpenRouter pick per call)
-- `cheap`            → deepseek/deepseek-v3.2
+- `cheap`            → deepseek/deepseek-v4-flash
+
+- `deepseek-flash`   → deepseek/deepseek-v4-flash
+- `deepseek-pro`     → deepseek/deepseek-v4-pro
 
 - `gemini-fast`      → google/gemini-3-flash-preview
 - `gpt-fast`         → openai/gpt-5-mini
