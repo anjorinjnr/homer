@@ -37,6 +37,13 @@ REPO_ROOT    = Path(__file__).parent.parent.resolve()
 SESSIONS_DIR = REPO_ROOT / "context" / ".nanobot_workspace" / "sessions"
 DB_PATH      = REPO_ROOT / "data" / "analytics.db"
 MODEL_FILE   = REPO_ROOT / "context" / ".nanobot_workspace" / "CURRENT_MODEL"
+# Per-call cost ledger written by nanobot (analytics/llm_telemetry.py). The
+# container's `/opt/homer/context` is a symlink to the bind-mounted
+# `/data/context`, so this resolves to the same file nanobot appends to via
+# `$HOMER_WORKSPACE/analytics/llm_ledger.jsonl`. Authoritative per-call cost
+# (correct model, cache-aware, incl. tool/heartbeat calls) — strictly better
+# than estimating from session logs at a single model.
+LEDGER_PATH  = REPO_ROOT / "context" / ".nanobot_workspace" / "analytics" / "llm_ledger.jsonl"
 CONFIG_PATH  = Path.home() / ".nanobot" / "config.json"
 
 # -- User ID resolution -------------------------------------------------------
@@ -474,6 +481,78 @@ def date_range(days=None, month=None):
     return start.isoformat(), end.isoformat()
 
 
+# -- Cost ledger (authoritative per-call cost, written by nanobot) ------------
+
+def read_ledger(start_iso=None, end_iso=None):
+    """Read cost-ledger rows within [start_iso, end_iso].
+
+    Rows are JSON lines written by nanobot per LLM call. `ts` is UTC ISO in
+    the same format `date_range()` emits, so lexicographic comparison windows
+    correctly. A missing/unreadable ledger or malformed line is skipped, never
+    raised — the report degrades to $0 rather than failing.
+    """
+    rows = []
+    try:
+        lines = LEDGER_PATH.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return rows
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        ts = row.get("ts", "")
+        if start_iso and ts < start_iso:
+            continue
+        if end_iso and ts > end_iso:
+            continue
+        rows.append(row)
+    return rows
+
+
+def _ledger_row_cost(row):
+    """Per-call cost: provider's authoritative charge when present, else estimate."""
+    cost = row.get("cost_served")
+    if cost is None:
+        cost = row.get("cost", 0.0)
+    try:
+        return float(cost or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def aggregate_ledger_cost(rows):
+    """Aggregate ledger rows → totals broken down by model, task, and day."""
+    total = 0.0
+    by_model, by_task, by_day = {}, {}, {}
+    for row in rows:
+        cost = _ledger_row_cost(row)
+        total += cost
+        by_model[row.get("model") or "unknown"] = (
+            by_model.get(row.get("model") or "unknown", 0.0) + cost
+        )
+        by_task[row.get("task") or "unknown"] = (
+            by_task.get(row.get("task") or "unknown", 0.0) + cost
+        )
+        day = (row.get("ts") or "")[:10]
+        if day:
+            by_day[day] = by_day.get(day, 0.0) + cost
+
+    def _sorted_round(d):
+        return {k: round(v, 4) for k, v in sorted(d.items(), key=lambda kv: kv[1], reverse=True)}
+
+    return {
+        "total_usd": round(total, 4),
+        "by_model": _sorted_round(by_model),
+        "by_task": _sorted_round(by_task),
+        "by_day": {k: round(v, 4) for k, v in sorted(by_day.items())},
+        "generations": len(rows),
+    }
+
+
 def query_summary(conn, days=7, user=None, month=None):
     start, end = date_range(days=days, month=month)
     label = month or "last {} days".format(days)
@@ -535,19 +614,11 @@ def query_summary(conn, days=7, user=None, month=None):
         for r in top_tools_rows
     ]
 
-    cost_row = conn.execute(
-        "SELECT SUM(cost_usd) as total FROM messages WHERE {}".format(base_where), params
-    ).fetchone()
-    cost_total = round(cost_row["total"] or 0.0, 4)
-
-    cost_by_model = {
-        r["model_used"]: round(r["c"] or 0.0, 4)
-        for r in conn.execute(
-            "SELECT model_used, SUM(cost_usd) as c FROM messages WHERE {} "
-            "GROUP BY model_used".format(base_where),
-            params,
-        ).fetchall()
-    }
+    # Cost comes from the per-call ledger nanobot writes (accurate model +
+    # cache-aware + captures tool/heartbeat calls), NOT the session-log
+    # estimate in the messages table. The ledger has no per-user attribution,
+    # so cost is household-wide even when `user` filters the activity metrics.
+    ledger = aggregate_ledger_cost(read_ledger(start, end))
 
     avg_dur_row = conn.execute(
         "SELECT AVG(duration_ms) as a FROM messages WHERE {} "
@@ -563,8 +634,11 @@ def query_summary(conn, days=7, user=None, month=None):
         "by_skill": by_skill,
         "top_tools": top_tools,
         "cost": {
-            "total_usd": cost_total,
-            "by_model": cost_by_model,
+            "total_usd": ledger["total_usd"],
+            "by_model": ledger["by_model"],
+            "by_task": ledger["by_task"],
+            "generations": ledger["generations"],
+            "source": "ledger",
         },
         "avg_response_ms": round(avg_dur_row["a"] or 0),
     }
@@ -643,49 +717,26 @@ def query_cost_report(conn, days=30, month=None):
     start, end = date_range(days=days, month=month)
     label = month or "last {} days".format(days)
 
-    total = conn.execute(
-        "SELECT SUM(cost_usd) as t, SUM(tokens_in) as ti, SUM(tokens_out) as to_ "
-        "FROM messages WHERE timestamp BETWEEN ? AND ?",
-        [start, end],
-    ).fetchone()
-
-    by_model = conn.execute(
-        "SELECT model_used, SUM(cost_usd) as cost, "
-        "SUM(tokens_in) as ti, SUM(tokens_out) as to_ "
-        "FROM messages WHERE timestamp BETWEEN ? AND ? "
-        "GROUP BY model_used ORDER BY cost DESC",
-        [start, end],
-    ).fetchall()
-
-    by_user = conn.execute(
-        "SELECT user_name, SUM(cost_usd) as cost, COUNT(*) as msgs "
-        "FROM messages WHERE timestamp BETWEEN ? AND ? "
-        "GROUP BY user_name ORDER BY cost DESC",
-        [start, end],
-    ).fetchall()
+    # Cost + tokens from the per-call ledger (authoritative). The ledger has
+    # no per-user attribution, so we break down by model and task_kind rather
+    # than user — task_kind (chat / heartbeat_system / ...) is the actionable
+    # axis for "where is spend going" anyway.
+    rows = read_ledger(start, end)
+    agg = aggregate_ledger_cost(rows)
+    tok_in = sum(int(r.get("in") or 0) for r in rows)
+    tok_out = sum(int(r.get("out") or 0) for r in rows)
+    cache = sum(int(r.get("cache") or 0) for r in rows)
 
     return {
         "period": label,
-        "total_cost_usd": round(total["t"] or 0.0, 4),
-        "total_tokens_in": total["ti"] or 0,
-        "total_tokens_out": total["to_"] or 0,
-        "by_model": [
-            {
-                "model": r["model_used"],
-                "cost_usd": round(r["cost"] or 0.0, 4),
-                "tokens_in": r["ti"] or 0,
-                "tokens_out": r["to_"] or 0,
-            }
-            for r in by_model
-        ],
-        "by_user": [
-            {
-                "user": r["user_name"],
-                "cost_usd": round(r["cost"] or 0.0, 4),
-                "messages": r["msgs"],
-            }
-            for r in by_user
-        ],
+        "source": "ledger",
+        "total_cost_usd": agg["total_usd"],
+        "total_tokens_in": tok_in,
+        "total_tokens_out": tok_out,
+        "total_cache_read_tokens": cache,
+        "generations": agg["generations"],
+        "by_model": [{"model": m, "cost_usd": c} for m, c in agg["by_model"].items()],
+        "by_task": [{"task": t, "cost_usd": c} for t, c in agg["by_task"].items()],
     }
 
 
@@ -700,13 +751,15 @@ def query_daily_trend(conn, days=30, user=None):
 
     rows = conn.execute(
         "SELECT DATE(timestamp) as day, COUNT(*) as messages, "
-        "SUM(cost_usd) as cost, "
         "SUM(CASE WHEN direction='inbound' THEN 1 ELSE 0 END) as user_messages, "
         "SUM(CASE WHEN direction='system' THEN 1 ELSE 0 END) as system_messages "
         "FROM messages WHERE {} "
         "GROUP BY DATE(timestamp) ORDER BY day".format(base_where),
         params,
     ).fetchall()
+
+    # Per-day cost from the ledger (authoritative), keyed by calendar day.
+    cost_by_day = aggregate_ledger_cost(read_ledger(start, end))["by_day"]
 
     return {
         "period": "last {} days".format(days),
@@ -716,7 +769,7 @@ def query_daily_trend(conn, days=30, user=None):
                 "messages": r["messages"],
                 "user_messages": r["user_messages"],
                 "system_messages": r["system_messages"],
-                "cost_usd": round(r["cost"] or 0.0, 4),
+                "cost_usd": cost_by_day.get(r["day"], 0.0),
             }
             for r in rows
         ],
