@@ -75,7 +75,9 @@
       },
       "modelPresets": {
         "auto": "openrouter/auto",
-        "cheap": "deepseek/deepseek-v3.2",
+        "cheap": "deepseek/deepseek-v4-flash",
+        "deepseek-flash": "deepseek/deepseek-v4-flash",
+        "deepseek-pro": "deepseek/deepseek-v4-pro",
         "gemini-fast": "google/gemini-3-flash-preview",
         "gemini-balanced": "google/gemini-2.5-pro",
         "gemini-smart": "google/gemini-3.1-pro-preview",
@@ -85,7 +87,7 @@
         "claude-fast": "anthropic/claude-haiku-4.5",
         "claude-balanced": "anthropic/claude-sonnet-4.6",
         "claude-smart": "anthropic/claude-opus-4.7",
-        "default-cheap": "deepseek/deepseek-v3.2"
+        "default-cheap": "deepseek/deepseek-v4-flash"
       }
     }
   },

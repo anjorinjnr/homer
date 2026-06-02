@@ -19,7 +19,7 @@ Model presets:
     sonnet        — claude-sonnet-4-6
     haiku         — claude-haiku-4-5-20251001
     claude        — alias for sonnet
-    default-cheap — deepseek/deepseek-v3.2 (default-tier background work;
+    default-cheap — deepseek/deepseek-v4-flash (default-tier background work;
                     routed via litellm openrouter passthrough)
 """
 

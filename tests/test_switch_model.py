@@ -86,7 +86,7 @@ def test_auto_preset_lets_openrouter_route(fake_env, monkeypatch):
 def test_default_cheap_preset_has_valid_model_id():
     """Lock the regression from issue #250 — the deprecated
     `openrouter/deepseek/deepseek-chat-v3.2:free` id must not come back."""
-    assert sm.MODELS["default-cheap"]["model"] == "deepseek/deepseek-v3.2"
+    assert sm.MODELS["default-cheap"]["model"] == "deepseek/deepseek-v4-flash"
     assert sm.MODELS["default-cheap"]["provider"] == "openrouter"
 
 
@@ -149,8 +149,8 @@ def test_switch_to_default_cheap_with_openrouter_succeeds(fake_env, monkeypatch)
                         ["switch_model.py", "--model", "default-cheap", "--no-restart"])
     sm.main()
     config = json.loads(config_path.read_text())
-    assert config["agents"]["defaults"]["model"] == "deepseek/deepseek-v3.2"
-    assert (workspace / "CURRENT_MODEL").read_text() == "deepseek/deepseek-v3.2"
+    assert config["agents"]["defaults"]["model"] == "deepseek/deepseek-v4-flash"
+    assert (workspace / "CURRENT_MODEL").read_text() == "deepseek/deepseek-v4-flash"
 
 
 def test_switch_to_default_cheap_without_openrouter_fails(fake_env, monkeypatch, capsys):

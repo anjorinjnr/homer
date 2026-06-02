@@ -371,9 +371,9 @@ Then move to the next setup item on the following eligible turn.
 
 **User (next eligible turn):** "what's the weather?"
 
-1. `status` → `next_setup: byok`, `current_model: deepseek/deepseek-v3.2`.
+1. `status` → `next_setup: byok`, `current_model: deepseek/deepseek-v4-flash`.
 2. Answer weather.
-3. Append: "heads up — you're on the default model (deepseek-v3.2). if you
+3. Append: "heads up — you're on the default model (deepseek-v4-flash). if you
    want higher rate limits or a specific model (Claude Sonnet, Gemini Pro),
    drop your own API key in the portal:
    <portal>/settings/ai-provider. otherwise we're good."
