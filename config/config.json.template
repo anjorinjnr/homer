@@ -20,6 +20,7 @@
     "defaults": {
       "model": "${HOMER_DEFAULT_MODEL}",
       "provider": "${HOMER_DEFAULT_PROVIDER}",
+      "multimodalModel": "google/gemini-2.5-flash",
       "workspace": "${HOMER_WORKSPACE}",
       "guestWorkspace": "/opt/homer/context/.guest_workspace",
       "contextWindowTokens": 200000,

@@ -54,6 +54,16 @@ PRESETS: dict[str, Preset] = {
 }
 
 
+# Vision-capable model for per-turn multimodal routing (nanobot's
+# `agents.defaults.multimodalModel`). The default text tier (deepseek) is
+# text-only on its OpenRouter route, so image/audio turns route here instead.
+# Lives in this module so the config-template literals are drift-guarded like
+# the preset slate (tests/test_presets_drift.py). Must be a multimodal model
+# reachable via OpenRouter (routed by model-id prefix) and priced in nanobot's
+# pricing.py so cost telemetry isn't $0.
+MULTIMODAL_MODEL = "google/gemini-2.5-flash"
+
+
 def model_presets_map() -> dict[str, str]:
     """Flat label → model id dict, in the shape nanobot's heartbeat config
     expects (`gateway.heartbeat.modelPresets`)."""
