@@ -15,6 +15,7 @@ On failure:   {"error": "...", "stderr": "...", "exit_code": N}
 import argparse
 import json
 import os
+import socket
 import subprocess
 import sys
 import threading
@@ -28,6 +29,13 @@ DOCKER_IMAGE = "homer-sandbox:latest"
 TIMEOUT_SECS = 30
 MAX_OUTPUT_BYTES = 64 * 1024  # 64KB
 CONTAINER_PREFIX = "homer-sandbox-"
+
+# Hosted tenant containers can't run docker themselves (no CLI, zero caps,
+# nested userns blocked), so a host-side runner executes the sandbox for them
+# over this per-tenant unix socket (see homer-portal build/sandbox/). When the
+# socket is present we use it; otherwise we fall back to the direct `docker
+# run` below (bare-VPS / dev topology, where docker is reachable).
+SANDBOX_SOCKET = Path(os.environ.get("HOMER_SANDBOX_SOCKET", "/data/sandbox/run.sock"))
 
 
 def validate_code_file(path_str: str) -> Path:
@@ -158,8 +166,49 @@ def run_code(code_path: Path, intent: str) -> dict:
             pass
 
 
+def run_via_socket(code_path: Path, intent: str) -> dict:
+    """Run the script via the host-side sandbox runner (per-tenant unix socket).
+
+    The runner owns every sandbox argument; we send only the script path
+    *relative to the workspace tmp/* plus the intent. The runner resolves and
+    confines it host-side, runs the hardened `homer-sandbox` container, and
+    returns the same {output|error, stderr, exit_code} shape as the docker path.
+    """
+    try:
+        rel = str(code_path.resolve().relative_to(ALLOWED_CODE_DIR.resolve()))
+    except ValueError:
+        return {"error": f"Code file must be inside {ALLOWED_CODE_DIR}/", "exit_code": -1}
+
+    request = (json.dumps({"script": rel, "intent": intent}) + "\n").encode("utf-8")
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            # Runner enforces its own 30s execution cap; allow connect + IO overhead.
+            sock.settimeout(TIMEOUT_SECS + 15)
+            sock.connect(str(SANDBOX_SOCKET))
+            sock.sendall(request)
+            chunks = []
+            while True:
+                buf = sock.recv(65536)
+                if not buf:
+                    break  # runner closes after the single response line
+                chunks.append(buf)
+        raw = b"".join(chunks).decode("utf-8", "replace").strip()
+        if not raw:
+            return {"error": "sandbox runner returned no response", "exit_code": -1}
+        return json.loads(raw)
+    except (OSError, ConnectionError) as exc:
+        return {"error": f"Sandbox runner unreachable: {exc}", "exit_code": -1}
+    except json.JSONDecodeError:
+        return {"error": "sandbox runner returned a malformed response", "exit_code": -1}
+    finally:
+        try:
+            code_path.unlink()  # consumed host-side; don't leave it lying around
+        except OSError:
+            pass
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Run Python code in a Docker sandbox")
+    parser = argparse.ArgumentParser(description="Run Python code in a sandbox (host runner or docker)")
     parser.add_argument("--code-file", required=True,
                         help=f"Path to script inside {ALLOWED_CODE_DIR}/")
     parser.add_argument("--intent", required=True,
@@ -172,7 +221,12 @@ def main():
         print(json.dumps({"error": str(e), "exit_code": -1}))
         sys.exit(1)
 
-    result = run_code(code_path, args.intent)
+    # Prefer the host-side runner when its socket is present (hosted tenants);
+    # otherwise run docker directly (bare-VPS / dev).
+    if SANDBOX_SOCKET.exists():
+        result = run_via_socket(code_path, args.intent)
+    else:
+        result = run_code(code_path, args.intent)
     print(json.dumps(result, indent=2))
 
     if "error" in result:
