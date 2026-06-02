@@ -202,7 +202,7 @@ For each entry:
 
 For each task whose schedule has passed:
 
-**Reminder (no Type):** Send the description, routed per `Recipients`. Has `Recur` → `--tick`. No `Recur` → `--complete`. Never send meta-commentary about task management — only the reminder content.
+**Reminder (no Type):** Send the description, routed per `Recipients`. Has `Recur` → `--tick`. No `Recur` → `--complete`. **NEVER `--complete` a task with `Recur:` set — that permanently archives it and breaks the recurrence; the heartbeat advances recurring schedules itself. Use `--remove` if you actually want to end a recurring task.** Never send meta-commentary about task management — only the reminder content.
 
 **System tasks (Type: system):**
 - `Gmail scan` → see Gmail Scan Routing below
@@ -264,7 +264,7 @@ For each task whose schedule has passed:
 - Use any tools/skills/exec scripts to accomplish it. Chain calls as needed.
 - Send the result to each `Recipients` entry — concise summary of what you did or found.
 - On failure (tool error, missing data): send a short explanation so the user can follow up.
-- Has Recur → `--tick`. No Recur → `--complete`.
+- Has Recur → `--tick`. No Recur → `--complete`. **NEVER `--complete` a task with `Recur:` set — that archives it permanently and breaks the recurrence; the heartbeat advances recurring schedules itself. Use `--remove` to end a recurrence.**
 - Uses agent default model unless `Model:` field overrides.
 
 **Announcements** (`## Announcements` in HEARTBEAT.md): Process before User Tasks. For each `###` entry, send `Message` to each recipient in `Recipients`, then `announce_update.py --done "[title]"`. Empty section → skip silent.

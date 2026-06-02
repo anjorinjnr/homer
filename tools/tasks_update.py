@@ -448,10 +448,17 @@ def find_task_block(content: str, keyword: str) -> tuple[int, int] | None:
     return None
 
 
-def complete_task(keyword: str, silent: bool = False) -> None:
+def complete_task(keyword: str, silent: bool = False, force: bool = False) -> None:
     """Move a task to ## Completed. ``silent=True`` suppresses the JSON
     status line — used by tick_task's auto-complete path so the caller
-    only sees one ``{"status": "auto-completed"}`` line, not both."""
+    only sees one ``{"status": "auto-completed"}`` line, not both.
+
+    ``force=True`` bypasses the recurring-task guard. Only tick_task's
+    natural-expiry path (Schedule rolled past Until) is expected to set
+    it; the CLI does not expose --force because the LLM has no legitimate
+    use case for completing a recurring task mid-cadence (use --remove
+    to actually end a recurrence).
+    """
     with heartbeat_lock(HEARTBEAT_FILE.parent):
         content = read_heartbeat()
         content, added = _backfill_user_task_ids(content)
@@ -465,6 +472,24 @@ def complete_task(keyword: str, silent: bool = False) -> None:
         block_start, block_end = bounds
         task_block = content[block_start:block_end].strip()
         task_desc = task_block.split("\n")[0].lstrip("#").strip()
+
+        # Recurring tasks must not be --complete'd after a single
+        # occurrence — that silently archives the block and drops the
+        # cadence. The heartbeat advances Schedule automatically after
+        # each run; the agent's job is just to deliver the message and
+        # stop. Use --remove if you actually want to end the recurrence.
+        # (Incident 2026-06-01: agent --complete'd a monthly spending
+        # report after one run; next month it didn't fire.)
+        if not force and re.search(r"^Recur:\s*\S", task_block, re.MULTILINE):
+            print(json.dumps({
+                "error": (
+                    f"Task '{task_desc}' has Recur: set — refusing to --complete. "
+                    "The heartbeat auto-advances recurring schedules; the agent "
+                    "should not mark them done after a single occurrence. To "
+                    "actually end the recurrence, use --remove."
+                ),
+            }))
+            sys.exit(1)
 
         # Remove from User Tasks
         updated = content[:block_start] + content[block_end:]
@@ -622,7 +647,10 @@ def tick_task(keyword: str) -> None:
             write_heartbeat(updated)
 
     if auto_complete:
-        complete_task(keyword, silent=True)
+        # force=True: the recurrence has naturally ended (Schedule rolled
+        # past Until), so the recurring-task guard in complete_task should
+        # not block the archive.
+        complete_task(keyword, silent=True, force=True)
         print(json.dumps({"status": "auto-completed", "reason": "past end date"}))
         return
     print(json.dumps({"status": "ticked", "next": next_schedule_str, "last_run": now_str}))

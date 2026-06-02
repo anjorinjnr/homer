@@ -1104,6 +1104,46 @@ def test_complete_by_title_substring_still_works(heartbeat_empty, capsys):
     assert "### Remind: file taxes" not in heartbeat_empty.read_text()
 
 
+def test_complete_refuses_recurring_task(heartbeat_empty, capsys):
+    """A task with Recur: must not be --complete'd — the heartbeat
+    advances its Schedule automatically, and archiving the block silently
+    breaks the recurrence.
+
+    Incident 2026-06-01: agent --complete'd a `Monthly spending report`
+    after a single run; the block was moved to ## Completed (losing
+    Schedule/Recur/Recipients) and next month it didn't fire.
+    """
+    tu.add_task("Monthly spending report", "2027-06-01 09:00",
+                recur="every 1 month", recipients="primary:whatsapp")
+    capsys.readouterr()
+
+    with pytest.raises(SystemExit):
+        tu.complete_task("Monthly spending report")
+    err = json.loads(capsys.readouterr().out)
+    assert "Recur:" in err["error"]
+    assert "--remove" in err["error"]
+
+    # Block stays in User Tasks — nothing was archived.
+    content = heartbeat_empty.read_text()
+    assert "### Monthly spending report" in content
+    assert "Recur: every 1 month" in content
+    assert "## Completed" in content  # still its own section, but empty body
+
+
+def test_complete_force_overrides_recurring_guard(heartbeat_empty, capsys):
+    """force=True bypasses the guard — used by tick_task's natural-expiry
+    path when a recurrence has rolled past its Until date."""
+    tu.add_task("Daily until-expired", "2027-06-10",
+                recur="every 1 day", until="2027-06-11",
+                recipients="primary:whatsapp")
+    capsys.readouterr()
+
+    tu.complete_task("Daily until-expired", force=True)
+    out = json.loads(capsys.readouterr().out)
+    assert out["status"] == "completed"
+    assert "### Daily until-expired" not in heartbeat_empty.read_text()
+
+
 def test_tick_by_id(heartbeat_empty, capsys):
     tu.add_task("Daily reminder", "2027-06-10",
                 recipients="primary:whatsapp", recur="every 1 day")
