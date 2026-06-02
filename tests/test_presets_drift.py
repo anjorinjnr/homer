@@ -30,7 +30,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # includes tools/).
 import sys
 sys.path.insert(0, str(REPO_ROOT / "tools"))
-from presets import PRESETS, model_presets_map  # noqa: E402
+from presets import MULTIMODAL_MODEL, PRESETS, model_presets_map  # noqa: E402
 
 
 # Anchored at the start of a list item, captures the label backtick + the
@@ -97,4 +97,26 @@ def test_template_model_presets_match(template: str) -> None:
         f"  in presets.py but not template: {set(want) - set(got)}\n"
         f"  mismatched values: "
         f"{ {k: (got.get(k), want.get(k)) for k in (set(got) & set(want)) if got.get(k) != want.get(k)} }"
+    )
+
+
+def _template_multimodal_model(name: str) -> str | None:
+    """Parse the agents.defaults.multimodalModel literal from a template."""
+    text = (REPO_ROOT / "config" / name).read_text(encoding="utf-8")
+    match = re.search(r'"multimodalModel"\s*:\s*"([^"]+)"', text)
+    return match.group(1) if match else None
+
+
+# The main configs route multimodal turns to a vision model; the guest configs
+# already default to a multimodal Gemini model, so they don't set it.
+@pytest.mark.parametrize("template", [
+    "config.json.template",
+    "config.hosted.json.template",
+])
+def test_template_multimodal_model_matches_presets(template: str) -> None:
+    got = _template_multimodal_model(template)
+    assert got == MULTIMODAL_MODEL, (
+        f"{template}'s multimodalModel ({got!r}) is out of sync with "
+        f"tools/presets.py MULTIMODAL_MODEL ({MULTIMODAL_MODEL!r}). Update both "
+        f"together so image turns don't route to a stale/retired model id."
     )
