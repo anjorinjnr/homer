@@ -32,10 +32,16 @@ CONTAINER_PREFIX = "homer-sandbox-"
 
 # Hosted tenant containers can't run docker themselves (no CLI, zero caps,
 # nested userns blocked), so a host-side runner executes the sandbox for them
-# over this per-tenant unix socket (see homer-portal build/sandbox/). When the
-# socket is present we use it; otherwise we fall back to the direct `docker
-# run` below (bare-VPS / dev topology, where docker is reachable).
-SANDBOX_SOCKET = Path(os.environ.get("HOMER_SANDBOX_SOCKET", "/data/sandbox/run.sock"))
+# over this unix socket (see homer-portal build/sandbox/). The socket lives in a
+# runner-owned dir bind-mounted at /run/sandbox (NOT under /data, so the tenant
+# can't tamper with the path). We STREAM the script + data bytes to the runner
+# (it never reads our filesystem). When the socket is present we use it;
+# otherwise we fall back to the direct `docker run` below (bare-VPS / dev).
+SANDBOX_SOCKET = Path(os.environ.get("HOMER_SANDBOX_SOCKET", "/run/sandbox/run.sock"))
+_MAX_SCRIPT_BYTES = 1 * 1024 * 1024
+_MAX_DATA_FILE_BYTES = 32 * 1024 * 1024
+_MAX_TOTAL_BYTES = 128 * 1024 * 1024
+_MAX_DATA_FILES = 200
 
 
 def validate_code_file(path_str: str) -> Path:
@@ -166,26 +172,60 @@ def run_code(code_path: Path, intent: str) -> dict:
             pass
 
 
-def run_via_socket(code_path: Path, intent: str) -> dict:
-    """Run the script via the host-side sandbox runner (per-tenant unix socket).
+def _gather_data_files(script_path: Path) -> list:
+    """Regular files under the workspace tmp/ to expose to the sandbox as
+    /home/sandbox/data (mirrors the old docker mount). Reads our OWN files
+    in-container — symlinks resolve inside the container, never on the host —
+    so this can only ever read this tenant's data. Skips symlinks/oversized,
+    bounded by count + total size. Returns [(relname, bytes)]."""
+    base = ALLOWED_CODE_DIR.resolve()
+    out: list = []
+    total = 0
+    for p in sorted(base.rglob("*")):
+        if len(out) >= _MAX_DATA_FILES:
+            break
+        try:
+            if p.is_symlink() or not p.is_file() or p.resolve() == script_path.resolve():
+                continue
+            data = p.read_bytes()
+        except OSError:
+            continue
+        if len(data) > _MAX_DATA_FILE_BYTES or total + len(data) > _MAX_TOTAL_BYTES:
+            continue
+        out.append((str(p.relative_to(base)), data))
+        total += len(data)
+    return out
 
-    The runner owns every sandbox argument; we send only the script path
-    *relative to the workspace tmp/* plus the intent. The runner resolves and
-    confines it host-side, runs the hardened `homer-sandbox` container, and
-    returns the same {output|error, stderr, exit_code} shape as the docker path.
+
+def run_via_socket(code_path: Path, intent: str) -> dict:
+    """Run the script via the host-side sandbox runner by STREAMING bytes.
+
+    We send a JSON header (intent, script size, data file manifest) then the raw
+    script + data bytes. The runner writes them into a dir it owns and runs the
+    hardened `homer-sandbox` container — it never touches our filesystem. Same
+    {output|error, stderr, exit_code} return shape as the docker path.
     """
     try:
-        rel = str(code_path.resolve().relative_to(ALLOWED_CODE_DIR.resolve()))
-    except ValueError:
-        return {"error": f"Code file must be inside {ALLOWED_CODE_DIR}/", "exit_code": -1}
+        script = code_path.read_bytes()
+    except OSError as exc:
+        return {"error": f"cannot read script: {exc}", "exit_code": -1}
+    if len(script) > _MAX_SCRIPT_BYTES:
+        return {"error": "script too large for the sandbox", "exit_code": -1}
 
-    request = (json.dumps({"script": rel, "intent": intent}) + "\n").encode("utf-8")
+    data_files = _gather_data_files(code_path)
+    header = {
+        "intent": intent,
+        "script_size": len(script),
+        "files": [[name, len(content)] for name, content in data_files],
+    }
+    blob = (json.dumps(header) + "\n").encode("utf-8") + script + b"".join(
+        content for _, content in data_files
+    )
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            # Runner enforces its own 30s execution cap; allow connect + IO overhead.
-            sock.settimeout(TIMEOUT_SECS + 15)
+            sock.settimeout(TIMEOUT_SECS + 30)  # runner caps exec at 30s; allow IO
             sock.connect(str(SANDBOX_SOCKET))
-            sock.sendall(request)
+            sock.sendall(blob)
             chunks = []
             while True:
                 buf = sock.recv(65536)
@@ -202,7 +242,7 @@ def run_via_socket(code_path: Path, intent: str) -> dict:
         return {"error": "sandbox runner returned a malformed response", "exit_code": -1}
     finally:
         try:
-            code_path.unlink()  # consumed host-side; don't leave it lying around
+            code_path.unlink()  # consumed; don't leave it lying around
         except OSError:
             pass
 
