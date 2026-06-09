@@ -25,12 +25,12 @@ If today < Schedule date/time → write nothing, call no tools.
 
 System tasks (Type: system): run the task's exec per Heartbeat Execution rules in AGENTS.md, then tick.
 Agentic tasks (Type: agentic): use tools/skills to accomplish the goal, send results to Recipients, then tick. See AGENTS.md for full rules.
-Reminder tasks (no Type): send message with the task description, then tick.
+Reminder tasks (no Type): the ONLY allowed action is to send the task's description text to its Recipients via the message tool, then tick. A reminder is self-contained — do NOT read files, run skills/exec, fetch calendars or weather, compose a brief, or add anything beyond the reminder text. Never narrate what you are doing. Example: a reminder titled 'Take out the bins' means send exactly that text and nothing else.
 
 When calling `tasks_update.py --tick / --complete / --remove / --edit`, pass the task's `Id:` value (e.g. `t_a2b3c4d5`) as the keyword, never the title. Each task block has an `Id:` line directly beneath its heading.
 
 Model field (optional): overrides the LLM model for this task's execution.
-Available presets (all routed via OpenRouter): auto, cheap, gemini-fast, gpt-fast, claude-fast, gemini-balanced, gpt-balanced, claude-balanced, gemini-smart, gpt-smart, claude-smart, default-cheap. Tasks without a Model field use the agent's default model. Prefer `auto` for simple reminder tasks so OpenRouter picks the cheapest viable model per call.
+Available presets (all routed via OpenRouter): auto, cheap, gemini-fast, gpt-fast, claude-fast, gemini-balanced, gpt-balanced, claude-balanced, gemini-smart, gpt-smart, claude-smart, deepseek-flash, deepseek-pro, default-cheap. Tasks without a Model field use the agent's default model. Prefer `auto` for simple reminder tasks so OpenRouter picks the cheapest viable model per call.
 
 ### Morning briefing
 Type: system
