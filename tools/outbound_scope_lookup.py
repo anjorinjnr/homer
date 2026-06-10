@@ -57,7 +57,7 @@ def _digits(s: str) -> str:
 
 
 def _empty_members() -> dict[str, set[str]]:
-    return {"telegram": set(), "whatsapp": set(), "email": set()}
+    return {"telegram": set(), "whatsapp": set(), "email": set(), "messages": set()}
 
 
 def _load_household_members() -> dict[str, set[str]]:
@@ -78,7 +78,7 @@ def _load_household_members() -> dict[str, set[str]]:
         return _empty_members()
 
     members: dict[str, set[str]] = {
-        "telegram": set(), "whatsapp": set(), "email": set(),
+        "telegram": set(), "whatsapp": set(), "email": set(), "messages": set(),
     }
     for _symbol, record in iter_users(data):
         channels = record.get("channels") or {}
@@ -88,6 +88,10 @@ def _load_household_members() -> dict[str, set[str]]:
             members["telegram"].add(_digits(str(tg)))
         if (wa := channels.get("whatsapp")):
             members["whatsapp"].add(_digits(str(wa)))
+        # Provider-neutral phone messaging (iMessage/RCS/SMS) — keyed on the
+        # same E.164 phone as WhatsApp, compared digit-only at lookup time.
+        if (msg := channels.get("messages")):
+            members["messages"].add(_digits(str(msg)))
         for key in ("email", "gmail"):
             if (email := channels.get(key)):
                 members["email"].add(ss.normalize_email(str(email)))
@@ -126,6 +130,9 @@ def _is_household_member(channel: str, chat_id: str) -> bool:
         return chat_id.removeprefix("tg:") in members["telegram"]
     if channel == "whatsapp":
         return _is_household_whatsapp(chat_id, members["whatsapp"])
+    if channel == "messages":
+        # Same digit-only phone match as WhatsApp (E.164 handle).
+        return _is_household_whatsapp(chat_id, members["messages"])
     if channel == "email":
         return ss.normalize_email(chat_id) in members["email"]
     return False
