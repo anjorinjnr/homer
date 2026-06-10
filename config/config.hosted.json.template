@@ -37,6 +37,14 @@
       "identity_resolution": true,
       "sender_map_path": "${HOMER_WORKSPACE}/sender_map.json"
     },
+    "messages": {
+      "enabled": ${CHANNEL_MESSAGES_ENABLED},
+      "allow_from": ${MESSAGES_ALLOW_FROM},
+      "address": "${MESSAGES_ADDRESS}",
+      "gateway_url": "${MESSAGES_GATEWAY_URL}",
+      "gateway_token": "${MESSAGES_GATEWAY_TOKEN}",
+      "ingest_port": ${MESSAGES_INGEST_PORT}
+    },
     "email": {
       "enabled": ${CHANNEL_EMAIL_ENABLED},
       "consentGranted": true,
