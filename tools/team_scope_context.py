@@ -90,7 +90,13 @@ def resolve_symbol(sender_id: str, users_data: dict | None = None) -> str | None
                     return symbol
         return None
 
-    digits = _digits(sender_id.removeprefix("tg:"))
+    # Telegram delivers sender_id as "{id}" or "{id}|{username}" (nanobot
+    # telegram.py `_sender_id`). Strip the username suffix before extracting
+    # digits — otherwise digits in the username fold into the numeric id and
+    # corrupt the match (resolving to the wrong member, or to none). WhatsApp
+    # JIDs / bare digits and emails never contain '|'.
+    core = sender_id.removeprefix("tg:").split("|", 1)[0]
+    digits = _digits(core)
     if not digits:
         return None
     for symbol, record in iter_users(data):

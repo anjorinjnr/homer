@@ -137,6 +137,10 @@ def test_team_display_name_falls_back_to_slug():
     [
         ("tg:5550000002", "jordan"),
         ("5550000002", "jordan"),
+        # nanobot delivers telegram sender_id as "{id}|{username}"; the username
+        # (even one containing digits) must not corrupt the numeric match.
+        ("5550000002|jordan9", "jordan"),
+        ("tg:5550000002|jk", "jordan"),
         ("14125550003@s.whatsapp.net", "riley"),  # JID form, formatting stripped
         ("14125550003", "riley"),  # bare full-number digits
         ("pat@example.com", "primary"),
