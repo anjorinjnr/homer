@@ -257,13 +257,28 @@ def apply_capability_markers(text: str, enabled) -> str:
     return CAPABILITY_BLOCK_RE.sub(_replace, text)
 
 
+def _org_template_name(name: str) -> str:
+    """In org mode (HOMER_ORG_MODE=1), prefer an ``_ORG``-suffixed variant of an
+    agent template when one exists on disk (``SOUL.md`` → ``SOUL_ORG.md``).
+
+    Lets org tenants ship a team-coordinator persona without a second code
+    path: a template with no ``_ORG`` variant transparently falls back to the
+    household original, so only the files that actually differ need an org copy.
+    """
+    if os.environ.get("HOMER_ORG_MODE") not in ("1", "true", "True"):
+        return name
+    stem, _, ext = name.rpartition(".")
+    variant = f"{stem}_ORG.{ext}" if stem else name
+    return variant if (AGENT_DIR / variant).exists() else name
+
+
 def load_template(name: str, enabled_capabilities=None) -> str:
     """Read an agent template file, apply capability markers, substitute vars.
 
     `enabled_capabilities` is a `set[str]` or the `ALL_CAPABILITIES_ENABLED`
     sentinel; `None` means resolve from disk now.
     """
-    raw = (AGENT_DIR / name).read_text(encoding="utf-8")
+    raw = (AGENT_DIR / _org_template_name(name)).read_text(encoding="utf-8")
     if enabled_capabilities is None:
         enabled_capabilities = load_enabled_capabilities()
     filtered = apply_capability_markers(raw, enabled_capabilities)
