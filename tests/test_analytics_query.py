@@ -314,12 +314,78 @@ def test_query_breakdown_user(tmp_db):
     assert "alex" in users
 
 
-def test_query_cost_report(tmp_db):
+def _seed_ledger(monkeypatch, tmp_path):
+    """Point aq.LEDGER_PATH at a tmp ledger with two priced rows (today)."""
+    from datetime import datetime, timezone
+    ts = datetime.now(timezone.utc).isoformat()
+    led = tmp_path / "llm_ledger.jsonl"
+    rows = [
+        {"ts": ts, "model": "deepseek/deepseek-v4-flash", "provider": "openrouter",
+         "in": 1000, "out": 200, "cache": 800, "cost": 0.20, "task": "chat", "retry": 1, "err": False},
+        {"ts": ts, "model": "google/gemini-2.5-flash", "provider": "openrouter",
+         "in": 500, "out": 100, "cache": 0, "cost": 0.10, "task": "heartbeat_system", "retry": 1, "err": False},
+    ]
+    led.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+    monkeypatch.setattr(aq, "LEDGER_PATH", led)
+    return led
+
+
+def test_query_cost_report(tmp_db, monkeypatch, tmp_path):
     _seed_db(tmp_db)
+    _seed_ledger(monkeypatch, tmp_path)
     result = aq.query_cost_report(tmp_db, days=7)
-    assert result["total_cost_usd"] > 0
-    assert len(result["by_model"]) > 0
-    assert len(result["by_user"]) > 0
+    assert result["source"] == "ledger"
+    assert result["total_cost_usd"] == pytest.approx(0.30)  # 0.20 + 0.10
+    assert {m["model"] for m in result["by_model"]} == {
+        "deepseek/deepseek-v4-flash", "google/gemini-2.5-flash",
+    }
+    assert {t["task"] for t in result["by_task"]} == {"chat", "heartbeat_system"}
+    # by_user is gone — the ledger has no per-user attribution.
+    assert "by_user" not in result
+
+
+def test_read_ledger_windows_by_timestamp(monkeypatch, tmp_path):
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    old = (now - timedelta(days=40)).isoformat()
+    recent = now.isoformat()
+    led = tmp_path / "l.jsonl"
+    led.write_text(
+        json.dumps({"ts": old, "model": "m", "cost": 1.0}) + "\n"
+        + json.dumps({"ts": recent, "model": "m", "cost": 2.0}) + "\n"
+        + "not json\n",  # malformed line is skipped, not raised
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(aq, "LEDGER_PATH", led)
+    start, end = aq.date_range(days=7)
+    rows = aq.read_ledger(start, end)
+    assert len(rows) == 1 and rows[0]["cost"] == 2.0
+
+
+def test_read_ledger_missing_file_returns_empty(monkeypatch, tmp_path):
+    monkeypatch.setattr(aq, "LEDGER_PATH", tmp_path / "does-not-exist.jsonl")
+    assert aq.read_ledger() == []
+
+
+def test_aggregate_prefers_cost_served_over_estimate():
+    rows = [
+        {"ts": "2026-06-01T00:00:00+00:00", "model": "x", "task": "chat", "cost": 0.50, "cost_served": 0.09},
+        {"ts": "2026-06-01T00:00:00+00:00", "model": "x", "task": "chat", "cost": 0.50},
+    ]
+    agg = aq.aggregate_ledger_cost(rows)
+    # first row uses the authoritative 0.09, second falls back to estimate 0.50
+    assert agg["total_usd"] == pytest.approx(0.59)
+    assert agg["by_model"]["x"] == pytest.approx(0.59)
+    assert agg["generations"] == 2
+
+
+def test_query_summary_cost_comes_from_ledger(tmp_db, monkeypatch, tmp_path):
+    _seed_db(tmp_db)
+    _seed_ledger(monkeypatch, tmp_path)
+    result = aq.query_summary(tmp_db, days=7)
+    assert result["cost"]["source"] == "ledger"
+    assert result["cost"]["total_usd"] == pytest.approx(0.30)
+    assert result["cost"]["generations"] == 2
 
 
 def test_query_daily_trend(tmp_db):
