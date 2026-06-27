@@ -22,7 +22,8 @@
       "guestWorkspace": "${HOMER_GUEST_WORKSPACE}",
       "contextWindowTokens": 200000,
       "idleCompactAfterMinutes": 30,
-      "timezone": "${HOMER_TIMEZONE}"
+      "timezone": "${HOMER_TIMEZONE}",
+      "scope_context_provider": "${SCOPE_CONTEXT_PROVIDER}"
     }
   },
   "channels": {
