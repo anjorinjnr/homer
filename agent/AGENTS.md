@@ -577,3 +577,9 @@ Read the **event-management skill** before responding to anything about planning
 
 Read the **analytics skill** before responding to questions about usage statistics, skill/tool popularity, API costs, or usage trends.
 <!-- /CAPABILITY -->
+
+<!-- CAPABILITY: breeze_roster -->
+### BreezeRoster — volunteer scheduling
+
+Read the **breeze-roster skill** before responding to anything about team rosters, service assignments, volunteer availability, schedule generation/publishing, slot assignment, or worship songs.
+<!-- /CAPABILITY -->

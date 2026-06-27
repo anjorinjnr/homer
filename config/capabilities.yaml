@@ -109,3 +109,18 @@ capabilities:
     requires_env:
       - SUPABASE_URL
       - SUPABASE_SERVICE_KEY
+
+  breeze_roster:
+    default_enabled: false
+    description: >
+      AI-assisted volunteer scheduling via BreezeRoster — team rosters,
+      schedule generation, slot assignment, availability outreach, and
+      worship song management. Org-mode only.
+    skills:
+      - breeze-roster
+    tools:
+      - breeze_roster.py
+    requires_env:
+      - BREEZE_BASE_URL
+      - BREEZE_CLIENT_ID
+      - BREEZE_CLIENT_SECRET

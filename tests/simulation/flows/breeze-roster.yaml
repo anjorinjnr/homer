@@ -1,0 +1,134 @@
+name: "BreezeRoster — team roster, schedule lookup, slot assignment"
+event_id: "sim_breeze_roster"
+event_name: "BreezeRoster Skill Simulation"
+model: "gemini/gemini-3-pro-preview"
+
+# Mock BreezeRoster API calls so the simulation doesn't need live credentials.
+mock_tools:
+  # List teams
+  - pattern: "breeze_roster\\.py.*--list-teams"
+    response: |
+      [{"id": "team-worship-001", "name": "Worship Team", "slug": "worship", "memberCount": 12}]
+
+  # List roster for worship team
+  - pattern: "breeze_roster\\.py.*--list-roster.*--team team-worship-001"
+    response: |
+      [
+        {"id": "vol-001", "name": "Sarah Johnson", "email": "sarah@example.com", "phone": "+14155550101"},
+        {"id": "vol-002", "name": "David Okafor", "email": "david@example.com", "phone": "+14155550102"},
+        {"id": "vol-003", "name": "Maria Santos", "email": "maria@example.com", "phone": "+14155550103"}
+      ]
+
+  # List events for worship team
+  - pattern: "breeze_roster\\.py.*--list-events.*--team team-worship-001"
+    response: |
+      [{"id": "evt-sunday-001", "name": "Sunday Worship", "recurrence": "weekly", "dayOfWeek": "Sunday"}]
+
+  # List instances of Sunday Worship
+  - pattern: "breeze_roster\\.py.*--list-instances evt-sunday-001.*--team team-worship-001"
+    response: |
+      [
+        {"id": "inst-2026-06-29", "date": "2026-06-29", "status": "scheduled", "eventId": "evt-sunday-001"},
+        {"id": "inst-2026-07-06", "date": "2026-07-06", "status": "scheduled", "eventId": "evt-sunday-001"}
+      ]
+
+  # Get instance with slot grid
+  - pattern: "breeze_roster\\.py.*--get-instance inst-2026-06-29"
+    response: |
+      {
+        "id": "inst-2026-06-29",
+        "date": "2026-06-29",
+        "status": "scheduled",
+        "slots": [
+          {"id": "slot-lead-001", "category": "Worship Lead", "volunteerId": "vol-001", "volunteerName": "Sarah Johnson"},
+          {"id": "slot-keys-001", "category": "Keys", "volunteerId": null, "volunteerName": null},
+          {"id": "slot-drums-001", "category": "Drums", "volunteerId": "vol-002", "volunteerName": "David Okafor"}
+        ]
+      }
+
+  # Search volunteers
+  - pattern: "breeze_roster\\.py.*--search-volunteers.*Maria"
+    response: |
+      [{"id": "vol-003", "name": "Maria Santos", "email": "maria@example.com"}]
+
+  # Assign slot
+  - pattern: "breeze_roster\\.py.*--assign-slot slot-keys-001.*--volunteer vol-003"
+    response: |
+      {"id": "slot-keys-001", "category": "Keys", "volunteerId": "vol-003", "volunteerName": "Maria Santos", "status": "assigned"}
+
+  # Event songs
+  - pattern: "breeze_roster\\.py.*--event-songs inst-2026-06-29.*--team team-worship-001"
+    response: |
+      [
+        {"id": "esong-001", "songId": "song-001", "title": "Great Is Thy Faithfulness", "key": "G", "position": 1},
+        {"id": "esong-002", "songId": "song-002", "title": "Build My Life", "key": "A", "position": 2}
+      ]
+
+  # List schedules
+  - pattern: "breeze_roster\\.py.*--list-schedules"
+    response: |
+      [{"id": "sched-june-001", "name": "June 2026", "status": "draft", "teamId": "team-worship-001"}]
+
+  # Get availability
+  - pattern: "breeze_roster\\.py.*--get-availability.*--schedule sched-june-001"
+    response: |
+      {
+        "scheduleId": "sched-june-001",
+        "summary": {"confirmed": 8, "unavailable": 2, "noResponse": 2},
+        "matrix": [
+          {"volunteerId": "vol-001", "volunteerName": "Sarah Johnson", "available": true},
+          {"volunteerId": "vol-002", "volunteerName": "David Okafor", "available": true},
+          {"volunteerId": "vol-003", "volunteerName": "Maria Santos", "available": null}
+        ]
+      }
+
+turns:
+  # Turn 1: roster lookup
+  - user: "Who's on the worship team?"
+    expect_tool_calls:
+      - pattern: "breeze_roster\\.py.*--list-teams"
+      - pattern: "breeze_roster\\.py.*--list-roster.*team-worship-001"
+    expect_response_contains:
+      - "Sarah Johnson"
+      - "David Okafor"
+      - "Maria Santos"
+
+  # Turn 2: schedule for Sunday
+  - user: "Who's scheduled for this Sunday, June 29th?"
+    expect_tool_calls:
+      - pattern: "breeze_roster\\.py.*--list-events.*team-worship-001"
+      - pattern: "breeze_roster\\.py.*--list-instances"
+      - pattern: "breeze_roster\\.py.*--get-instance inst-2026-06-29"
+    expect_response_contains:
+      - "Sarah Johnson"
+      - "Worship Lead"
+      - "Keys"
+    expect_response_mentions_unfilled_slots: true
+
+  # Turn 3: fill the open slot
+  - user: "Assign Maria to Keys for June 29th"
+    expect_tool_calls:
+      - pattern: "breeze_roster\\.py.*--search-volunteers.*Maria"
+      - pattern: "breeze_roster\\.py.*--assign-slot slot-keys-001.*--volunteer vol-003"
+    expect_response_contains:
+      - "Maria Santos"
+      - "Keys"
+
+  # Turn 4: song list
+  - user: "What songs are we doing on the 29th?"
+    expect_tool_calls:
+      - pattern: "breeze_roster\\.py.*--event-songs inst-2026-06-29.*--team team-worship-001"
+    expect_response_contains:
+      - "Great Is Thy Faithfulness"
+      - "Build My Life"
+
+  # Turn 5: availability check — confirm requires no bulk send
+  - user: "Check who hasn't responded for the June schedule"
+    expect_tool_calls:
+      - pattern: "breeze_roster\\.py.*--list-schedules"
+      - pattern: "breeze_roster\\.py.*--get-availability.*sched-june-001"
+    expect_response_contains:
+      - "Maria Santos"
+      - "no response"
+    expect_no_tool_calls:
+      - pattern: "breeze_roster\\.py.*--send-outreach"
