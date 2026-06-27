@@ -300,3 +300,110 @@ class TestCLIRouting:
         with pytest.raises(SystemExit) as exc:
             br.main()
         assert exc.value.code != 0
+
+
+# ---------------------------------------------------------------------------
+# URLError handling (network failures produce JSON, not tracebacks)
+# ---------------------------------------------------------------------------
+
+class TestURLErrorHandling:
+    def _set_token(self, client):
+        import time
+        cache = {"access_token": FAKE_TOKEN, "expires_at": time.time() + 3600}
+        client._token_cache_path().write_text(json.dumps(cache))
+
+    def test_fetch_token_url_error_produces_json_error(self):
+        client = br.BreezeClient()
+        err = urllib.error.URLError("Name or service not known")
+        old_stdout, sys.stdout = sys.stdout, StringIO()
+        with patch.object(urllib.request, "urlopen", side_effect=err):
+            with pytest.raises(SystemExit):
+                client._fetch_token()
+        output = sys.stdout.getvalue()
+        sys.stdout = old_stdout
+        result = json.loads(output)
+        assert "error" in result
+        assert "network" in result["error"].lower() or "name or service" in result["error"].lower()
+
+    def test_request_url_error_produces_json_error(self):
+        client = br.BreezeClient()
+        self._set_token(client)
+        err = urllib.error.URLError("Connection refused")
+        old_stdout, sys.stdout = sys.stdout, StringIO()
+        with patch.object(urllib.request, "urlopen", side_effect=err):
+            with pytest.raises(SystemExit):
+                client.list_teams()
+        output = sys.stdout.getvalue()
+        sys.stdout = old_stdout
+        result = json.loads(output)
+        assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# is-not-None dispatch — empty-string args must route correctly, not fall through
+# ---------------------------------------------------------------------------
+
+class TestIsNotNoneDispatch:
+    def _run_with_response(self, argv, api_response):
+        import time
+        client = br.BreezeClient()
+        cache = {"access_token": FAKE_TOKEN, "expires_at": time.time() + 3600}
+        client._token_cache_path().write_text(json.dumps(cache))
+
+        response_bytes = json.dumps(api_response).encode()
+        # Prepend token response for any re-auth attempt
+        sys.argv = ["breeze_roster.py"] + argv
+        old_stdout, sys.stdout = sys.stdout, StringIO()
+        try:
+            with patch.object(urllib.request, "urlopen",
+                              side_effect=_mock_urlopen([response_bytes])):
+                br.main()
+        except SystemExit:
+            pass
+        finally:
+            output = sys.stdout.getvalue()
+            sys.stdout = old_stdout
+        return json.loads(output)
+
+    def test_get_team_with_realistic_id(self):
+        data = {"id": "team-abc-123", "name": "Worship"}
+        result = self._run_with_response(["--get-team", "team-abc-123"], data)
+        assert result["id"] == "team-abc-123"
+
+    def test_generate_schedule_with_id(self):
+        data = {"status": "generated", "scheduleId": "sched-1"}
+        result = self._run_with_response(["--generate-schedule", "sched-1"], data)
+        assert result == data
+
+    def test_parse_rule_with_text(self):
+        data = {"rules": [{"type": "max_consecutive", "value": 2}]}
+        result = self._run_with_response(
+            ["--parse-rule", "No one serves more than two weeks in a row"], data
+        )
+        assert result == data
+
+    def test_event_songs_routes_correctly(self):
+        data = [{"id": "esong-1", "title": "Amazing Grace"}]
+        result = self._run_with_response(
+            ["--event-songs", "inst-001", "--team", "team-001"], data
+        )
+        assert result == data
+
+
+# ---------------------------------------------------------------------------
+# Token cache permissions (0o600)
+# ---------------------------------------------------------------------------
+
+class TestTokenCachePermissions:
+    def test_cache_file_written_mode_600(self, tmp_path):
+        import stat
+        client = br.BreezeClient()
+
+        with patch.object(urllib.request, "urlopen",
+                          side_effect=_mock_urlopen([TOKEN_RESPONSE])):
+            client._fetch_token()
+
+        cache_path = client._token_cache_path()
+        if cache_path.exists():
+            mode = stat.S_IMODE(cache_path.stat().st_mode)
+            assert mode == 0o600, f"Expected 0o600, got {oct(mode)}"

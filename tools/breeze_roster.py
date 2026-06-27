@@ -63,19 +63,25 @@ class BreezeClient:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
+        data: dict = {}
         try:
             with urllib.request.urlopen(req, timeout=15) as resp:
                 data = json.loads(resp.read())
         except urllib.error.HTTPError as e:
             body = e.read().decode(errors="replace")
             _die(f"Token exchange failed ({e.code}): {body}")
+        except urllib.error.URLError as e:
+            _die(f"Token exchange network error: {e}")
         token = data.get("access_token")
         if not token:
             _die(f"No access_token in response: {data}")
         # BreezeRoster tokens are short-lived (1 hour); cache for 55 min
         cache = {"access_token": token, "expires_at": time.time() + 3300}
         try:
-            self._token_cache_path().write_text(json.dumps(cache))
+            path = self._token_cache_path()
+            fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                f.write(json.dumps(cache))
         except OSError:
             pass
         return token
@@ -109,6 +115,8 @@ class BreezeClient:
         except urllib.error.HTTPError as e:
             body_text = e.read().decode(errors="replace")
             _die(f"HTTP {e.code} {method.upper()} {path}: {body_text}")
+        except urllib.error.URLError as e:
+            _die(f"Network error {method.upper()} {path}: {e}")
 
     def get(self, path: str, params: Optional[dict] = None) -> Any:
         return self._request("GET", path, params=params)
@@ -319,7 +327,7 @@ def main() -> None:
     if args.list_teams:
         _out(client.list_teams())
 
-    elif args.get_team:
+    elif args.get_team is not None:
         _out(client.get_team(args.get_team))
 
     elif args.list_roster:
@@ -336,26 +344,26 @@ def main() -> None:
     elif args.list_volunteers:
         _out(client.list_volunteers())
 
-    elif args.search_volunteers:
+    elif args.search_volunteers is not None:
         _out(client.search_volunteers(args.search_volunteers, team_id=args.team))
 
-    elif args.get_volunteer:
+    elif args.get_volunteer is not None:
         _out(client.get_volunteer(args.get_volunteer))
 
     # --- Schedules ---
     elif args.list_schedules:
         _out(client.list_schedules())
 
-    elif args.get_schedule:
+    elif args.get_schedule is not None:
         _out(client.get_schedule(args.get_schedule))
 
-    elif args.generate_schedule:
+    elif args.generate_schedule is not None:
         _out(client.generate_schedule(args.generate_schedule))
 
-    elif args.publish_schedule:
+    elif args.publish_schedule is not None:
         _out(client.publish_schedule(args.publish_schedule))
 
-    elif args.unpublish_schedule:
+    elif args.unpublish_schedule is not None:
         _out(client.unpublish_schedule(args.unpublish_schedule))
 
     # --- Events / Instances ---
@@ -364,26 +372,26 @@ def main() -> None:
             _die("--list-events requires --team TEAM_ID")
         _out(client.list_events(args.team))
 
-    elif args.get_event:
+    elif args.get_event is not None:
         if not args.team:
             _die("--get-event requires --team TEAM_ID")
         _out(client.get_event(args.team, args.get_event))
 
-    elif args.list_instances:
+    elif args.list_instances is not None:
         if not args.team:
             _die("--list-instances requires --team TEAM_ID")
         _out(client.list_instances(args.team, args.list_instances))
 
-    elif args.get_instance:
+    elif args.get_instance is not None:
         _out(client.get_instance(args.get_instance))
 
     # --- Slots ---
-    elif args.assign_slot:
+    elif args.assign_slot is not None:
         if not args.volunteer:
             _die("--assign-slot requires --volunteer VOLUNTEER_ID")
         _out(client.assign_slot(args.assign_slot, args.volunteer))
 
-    elif args.unassign_slot:
+    elif args.unassign_slot is not None:
         _out(client.assign_slot(args.unassign_slot, None))
 
     # --- Availability ---
@@ -403,7 +411,7 @@ def main() -> None:
             _die("--list-songs requires --team TEAM_ID")
         _out(client.list_songs(args.team))
 
-    elif args.event_songs:
+    elif args.event_songs is not None:
         if not args.team:
             _die("--event-songs requires --team TEAM_ID")
         _out(client.event_songs(args.team, args.event_songs))
@@ -412,7 +420,7 @@ def main() -> None:
     elif args.list_rules:
         _out(client.list_rules())
 
-    elif args.parse_rule:
+    elif args.parse_rule is not None:
         _out(client.parse_rule(args.parse_rule))
 
     # --- Org ---
