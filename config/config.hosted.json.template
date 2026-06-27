@@ -143,7 +143,10 @@
         "HOMER_EMAIL_APPROVALS_DB",
         "PORTAL_BASE_URL",
         "SUPABASE_URL",
-        "SUPABASE_SERVICE_KEY"
+        "SUPABASE_SERVICE_KEY",
+        "BREEZE_BASE_URL",
+        "BREEZE_CLIENT_ID",
+        "BREEZE_CLIENT_SECRET"
       ]
     },
     "audit": {
