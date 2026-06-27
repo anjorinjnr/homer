@@ -117,6 +117,16 @@ else
     SCOPE_OUTBOUND_LOOKUP=""
 fi
 
+# Org mode: HOMER_ORG_MODE scopes each member's turn to their team(s) via the
+# team_scope_context provider (see tools/team_scope_context.py). Accept the
+# same truthy spellings the Python side honours (1/true/True) so the provider
+# and the org persona never disagree about whether org mode is on.
+if [[ "${HOMER_ORG_MODE:-0}" =~ ^(1|true|True|TRUE)$ ]]; then
+    SCOPE_CONTEXT_PROVIDER="team_scope_context:render_team_context_for_sender"
+else
+    SCOPE_CONTEXT_PROVIDER=""
+fi
+
 sed \
     -e "s|\${ANTHROPIC_API_KEY}|${ANTHROPIC_API_KEY}|g" \
     -e "s|\${GEMINI_API_KEY}|${GEMINI_API_KEY:-}|g" \
@@ -136,6 +146,7 @@ sed \
     -e "s|\${HOMER_SECRETS}|${REPO_ROOT}/secrets|g" \
     -e "s|\${HOMER_EMAIL_ADDRESS}|${HOMER_EMAIL_ADDRESS:-homer@example.com}|g" \
     -e "s|\${SCOPE_OUTBOUND_LOOKUP}|${SCOPE_OUTBOUND_LOOKUP:-}|g" \
+    -e "s|\${SCOPE_CONTEXT_PROVIDER}|${SCOPE_CONTEXT_PROVIDER:-}|g" \
     "$REPO_ROOT/config/config.json.template" > "$CONFIG_OUT"
 
 chmod 600 "$CONFIG_OUT"
