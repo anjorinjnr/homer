@@ -837,6 +837,14 @@ def load_pending_replies() -> str:
 def build_user_context(include_finance: bool = False, include_health: bool = False) -> str:
     """Build USER.md content — household context loaded on every call."""
     parts = [f"# User Context\n<!-- Built: {datetime.now().strftime('%Y-%m-%d %H:%M')} -->\n\n"]
+    # Org mode: prepend org_context.md when present so the agent knows the org
+    # structure before personal household sections. Personal files are untouched.
+    if os.environ.get("HOMER_ORG_MODE") in ("1", "true", "True"):
+        org_ctx = USER_CONTEXT_DIR / "org_context.md"
+        if org_ctx.exists():
+            parts.append("---\n")
+            parts.append(org_ctx.read_text(encoding="utf-8").strip() + "\n")
+            parts.append("\n")
     for name in ALWAYS_LOAD:
         parts.append(f"---\n")
         parts.append(load_file(name))
